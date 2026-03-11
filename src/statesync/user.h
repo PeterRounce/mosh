@@ -90,8 +90,8 @@ public:
 
   /* interface for Network::Transport */
   void subtract( const UserStream* prefix );
-  std::string diff_from( const UserStream& existing ) const;
-  std::string init_diff( void ) const { return diff_from( UserStream() ); };
+  void diff_from( const UserStream& existing, std::string* output ) const;
+  void init_diff( std::string* output ) const { diff_from( UserStream(), output ); };
   void apply_string( std::string_view diff );
   bool operator==( const UserStream& x ) const { return actions == x.actions; }
 

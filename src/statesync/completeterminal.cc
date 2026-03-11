@@ -67,7 +67,7 @@ string Complete::act( const Action& act )
 }
 
 /* interface for Network::Transport */
-string Complete::diff_from( const Complete& existing ) const
+void Complete::diff_from( const Complete& existing, string* out ) const
 {
   HostBuffers::HostMessage output;
 
@@ -91,12 +91,12 @@ string Complete::diff_from( const Complete& existing ) const
     }
   }
 
-  return output.SerializeAsString();
+  out->assign( output.SerializeAsString() );
 }
 
-string Complete::init_diff( void ) const
+void Complete::init_diff( string* out ) const
 {
-  return diff_from( Complete( get_fb().ds.get_width(), get_fb().ds.get_height() ) );
+  diff_from( Complete( get_fb().ds.get_width(), get_fb().ds.get_height() ), out );
 }
 
 void Complete::apply_string( std::string_view diff )

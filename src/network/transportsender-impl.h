@@ -156,36 +156,37 @@ void TransportSender<MyState>::tick( void )
   uint64_t current_gen = current_state.get_fb_generation();
   uint64_t current_assumed_num = assumed_receiver_state->num;
 
-  std::string diff;
   if ( current_gen == last_local_generation_
        && current_assumed_num == last_assumed_receiver_num_
        && !cached_diff_.empty() ) {
-    diff = cached_diff_;
+    diff_buffer_ = cached_diff_;
   } else {
-    diff = current_state.diff_from( assumed_receiver_state->state );
-    cached_diff_ = diff;
+    current_state.diff_from( assumed_receiver_state->state, &diff_buffer_ );
+    cached_diff_ = diff_buffer_;
     last_local_generation_ = current_gen;
     last_assumed_receiver_num_ = current_assumed_num;
   }
 
-  attempt_prospective_resend_optimization( diff );
+  attempt_prospective_resend_optimization( diff_buffer_ );
 
   if ( verbose ) {
     /* verify diff has round-trip identity (modulo Unicode fallback rendering) */
     MyState newstate( assumed_receiver_state->state );
-    newstate.apply_string( diff );
+    newstate.apply_string( diff_buffer_ );
     if ( current_state.compare( newstate ) ) {
       fprintf( stderr, "Warning, round-trip Instruction verification failed!\n" );
     }
     /* Also verify that both the original frame and generated frame have the same initial diff. */
-    std::string current_diff( current_state.init_diff() );
-    std::string new_diff( newstate.init_diff() );
+    std::string current_diff;
+    current_state.init_diff( &current_diff );
+    std::string new_diff;
+    newstate.init_diff( &new_diff );
     if ( current_diff != new_diff ) {
       fprintf( stderr, "Warning, target state Instruction verification failed!\n" );
     }
   }
 
-  if ( diff.empty() ) {
+  if ( diff_buffer_.empty() ) {
     if ( ( now >= next_ack_time ) ) {
       send_empty_ack();
       mindelay_clock = uint64_t( -1 );
@@ -196,7 +197,7 @@ void TransportSender<MyState>::tick( void )
     }
   } else if ( ( now >= next_send_time ) || ( now >= next_ack_time ) ) {
     /* Send diffs or ack */
-    send_to_receiver( diff );
+    send_to_receiver( diff_buffer_ );
     mindelay_clock = uint64_t( -1 );
   }
 }
@@ -432,14 +433,13 @@ void TransportSender<MyState>::attempt_prospective_resend_optimization( std::str
   uint64_t resend_gen = current_state.get_fb_generation();
   uint64_t front_num = sent_states.front().num;
 
-  std::string resend_diff;
   if ( resend_gen == resend_local_generation_
        && front_num == resend_base_num_
        && !cached_resend_diff_.empty() ) {
-    resend_diff = cached_resend_diff_;
+    resend_diff_buffer_ = cached_resend_diff_;
   } else {
-    resend_diff = current_state.diff_from( sent_states.front().state );
-    cached_resend_diff_ = resend_diff;
+    current_state.diff_from( sent_states.front().state, &resend_diff_buffer_ );
+    cached_resend_diff_ = resend_diff_buffer_;
     resend_local_generation_ = resend_gen;
     resend_base_num_ = front_num;
   }
@@ -448,10 +448,11 @@ void TransportSender<MyState>::attempt_prospective_resend_optimization( std::str
      or if it would lengthen it by no more than 100 bytes and still be
      less than 1000 bytes. */
 
-  if ( ( resend_diff.size() <= proposed_diff.size() )
-       || ( ( resend_diff.size() < 1000 ) && ( resend_diff.size() - proposed_diff.size() < 100 ) ) ) {
+  if ( ( resend_diff_buffer_.size() <= proposed_diff.size() )
+       || ( ( resend_diff_buffer_.size() < 1000 )
+            && ( resend_diff_buffer_.size() - proposed_diff.size() < 100 ) ) ) {
     assumed_receiver_state = sent_states.begin();
-    proposed_diff = resend_diff;
+    proposed_diff = resend_diff_buffer_;
   }
 }
 

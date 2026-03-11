@@ -48,7 +48,7 @@ class Complete
 private:
   Parser::UTF8Parser parser;
   Terminal::Emulator terminal;
-  Terminal::Display display;
+  mutable Terminal::Display display;
 
   // Only used locally by act(), but kept here as a performance optimization,
   // to avoid construction/destruction.  It must always be empty
@@ -79,8 +79,8 @@ public:
 
   /* interface for Network::Transport */
   void subtract( const Complete* ) const {}
-  std::string diff_from( const Complete& existing ) const;
-  std::string init_diff( void ) const;
+  void diff_from( const Complete& existing, std::string* output ) const;
+  void init_diff( std::string* output ) const;
   void apply_string( std::string_view diff );
   bool operator==( const Complete& x ) const;
 

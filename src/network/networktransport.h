@@ -63,6 +63,7 @@ private:
   RemoteState last_receiver_state; /* the state we were in when user last queried state */
   FragmentAssembly fragments;
   unsigned int verbose;
+  std::string remote_diff_buffer_;
 
 public:
   Transport( MyState& initial_state,

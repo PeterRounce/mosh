@@ -57,7 +57,7 @@ void UserStream::subtract( const UserStream* prefix )
   }
 }
 
-std::string UserStream::diff_from( const UserStream& existing ) const
+void UserStream::diff_from( const UserStream& existing, std::string* out ) const
 {
   std::deque<UserEvent>::const_iterator my_it = actions.begin();
 
@@ -98,7 +98,7 @@ std::string UserStream::diff_from( const UserStream& existing ) const
     my_it++;
   }
 
-  return output.SerializeAsString();
+  out->assign( output.SerializeAsString() );
 }
 
 void UserStream::apply_string( std::string_view diff )
