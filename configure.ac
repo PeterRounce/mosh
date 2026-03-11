@@ -243,15 +243,7 @@ AS_IF([test x"$with_utempter" != xno],
       [AC_MSG_WARN([Unable to find libutempter; utmp entries will not be made.])],
       [AC_MSG_ERROR([--with-utempter was given but libutempter was not found.])])])])
 
-AC_ARG_ENABLE([static-zlib],
-  [AS_HELP_STRING([--enable-static-zlib], [Link zlib statically @<:@no@:>@])],
-  [], [enable_static_zlib="$enable_static_libraries"])
-AC_CHECK_LIB([z], [compress],
-  [ZLIB_LIBS=-lz
-   AS_IF([test "$enable_static_zlib" = yes],
-     [ZLIB_LIBS="-Wl,-Bstatic $ZLIB_LIBS -Wl,-Bdynamic"])
-   LIBS="$ZLIB_LIBS $LIBS"],
-  [AC_MSG_ERROR([Unable to find zlib.])])
+PKG_CHECK_MODULES([ZSTD], [libzstd])
 
 AC_SEARCH_LIBS([socket], [socket network])
 AC_SEARCH_LIBS([inet_addr], [nsl])

@@ -35,25 +35,28 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
+#include <zstd.h>
 
 namespace Network {
 class Compressor
 {
 private:
-  static const int BUFFER_SIZE = 2048 * 2048; /* effective limit on terminal size */
-
-  unsigned char buffer[BUFFER_SIZE];
+  ZSTD_CCtx* cctx_;
+  ZSTD_DCtx* dctx_;
+  std::vector<char> compress_buf_;
+  std::vector<char> decompress_buf_;
+  static const size_t INITIAL_BUF_SIZE = 2048 * 2048;
 
 public:
-  Compressor() : buffer() {}
-  ~Compressor() {}
+  Compressor();
+  ~Compressor();
 
   std::string compress_str( std::string_view input );
   std::string uncompress_str( std::string_view input );
 
-  /* unused */
-  Compressor( const Compressor& );
-  Compressor& operator=( const Compressor& );
+  Compressor( const Compressor& ) = delete;
+  Compressor& operator=( const Compressor& ) = delete;
 };
 
 Compressor& get_compressor( void );

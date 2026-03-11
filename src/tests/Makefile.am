@@ -38,8 +38,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale framebuffer-gen row-hash
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr framebuffer-gen row-hash local.test $(displaytests)
+check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale framebuffer-gen row-hash compressor
+TESTS = ocb-aes encrypt-decrypt base64 nonce-incr framebuffer-gen row-hash compressor local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -62,7 +62,7 @@ base64_LDADD = $(ocb_aes_LDADD)
 
 nonce_incr_SOURCES = nonce-incr.cc
 nonce_incr_CPPFLAGS = -I$(srcdir)/../network -I$(srcdir)/../crypto -I$(srcdir)/../util $(CRYPTO_CFLAGS)
-nonce_incr_LDADD = ../network/libmoshnetwork.a ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(CRYPTO_LIBS)
+nonce_incr_LDADD = ../network/libmoshnetwork.a ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(CRYPTO_LIBS) $(ZSTD_LIBS)
 
 inpty_SOURCES = inpty.cc
 inpty_CPPFLAGS = -I$(srcdir)/../util
@@ -79,6 +79,10 @@ framebuffer_gen_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../p
 row_hash_SOURCES = row-hash.cc
 row_hash_CPPFLAGS = -I$(srcdir)/../terminal -I$(srcdir)/../util $(PROTOBUF_CFLAGS) $(XXHASH_CFLAGS)
 row_hash_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../protobufs/libmoshprotos.a $(PROTOBUF_LIBS) $(TINFO_LIBS) $(XXHASH_LIBS)
+
+compressor_SOURCES = compressor.cc
+compressor_CPPFLAGS = -I$(top_srcdir)/ $(ZSTD_CFLAGS)
+compressor_LDADD = ../network/libmoshnetwork.a ../util/libmoshutil.a $(ZSTD_LIBS)
 
 clean-local: clean-local-check
 .PHONY: clean-local-check

@@ -30,28 +30,52 @@
     also delete it here.
 */
 
-#include <string_view>
-#include <zlib.h>
-
 #include "compressor.h"
-#include "src/util/dos_assert.h"
+#include "src/util/fatal_assert.h"
 
 using namespace Network;
 
+Compressor::Compressor()
+  : cctx_( ZSTD_createCCtx() ),
+    dctx_( ZSTD_createDCtx() ),
+    compress_buf_( INITIAL_BUF_SIZE ),
+    decompress_buf_( INITIAL_BUF_SIZE )
+{
+  fatal_assert( cctx_ != nullptr );
+  fatal_assert( dctx_ != nullptr );
+}
+
+Compressor::~Compressor()
+{
+  ZSTD_freeCCtx( cctx_ );
+  ZSTD_freeDCtx( dctx_ );
+}
+
 std::string Compressor::compress_str( std::string_view input )
 {
-  long unsigned int len = BUFFER_SIZE;
-  dos_assert( Z_OK
-              == compress( buffer, &len, reinterpret_cast<const unsigned char*>( input.data() ), input.size() ) );
-  return std::string( reinterpret_cast<char*>( buffer ), len );
+  size_t bound = ZSTD_compressBound( input.size() );
+  if ( bound > compress_buf_.size() ) {
+    compress_buf_.resize( bound );
+  }
+  size_t result = ZSTD_compressCCtx( cctx_, compress_buf_.data(), compress_buf_.size(), input.data(), input.size(), 1 );
+  fatal_assert( !ZSTD_isError( result ) );
+  return std::string( compress_buf_.data(), result );
 }
 
 std::string Compressor::uncompress_str( std::string_view input )
 {
-  long unsigned int len = BUFFER_SIZE;
-  dos_assert( Z_OK
-              == uncompress( buffer, &len, reinterpret_cast<const unsigned char*>( input.data() ), input.size() ) );
-  return std::string( reinterpret_cast<char*>( buffer ), len );
+  unsigned long long frame_size = ZSTD_getFrameContentSize( input.data(), input.size() );
+  size_t out_size = INITIAL_BUF_SIZE;
+  if ( frame_size != ZSTD_CONTENTSIZE_UNKNOWN && frame_size != ZSTD_CONTENTSIZE_ERROR ) {
+    out_size = static_cast<size_t>( frame_size );
+  }
+  if ( out_size > decompress_buf_.size() ) {
+    decompress_buf_.resize( out_size );
+  }
+  size_t result
+    = ZSTD_decompressDCtx( dctx_, decompress_buf_.data(), decompress_buf_.size(), input.data(), input.size() );
+  fatal_assert( !ZSTD_isError( result ) );
+  return std::string( decompress_buf_.data(), result );
 }
 
 /* construct on first use */
