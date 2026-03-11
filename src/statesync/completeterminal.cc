@@ -31,6 +31,7 @@
 */
 
 #include <climits>
+#include <string_view>
 
 #include "src/protobufs/hostinput.pb.h"
 #include "src/statesync/completeterminal.h"
@@ -98,10 +99,10 @@ string Complete::init_diff( void ) const
   return diff_from( Complete( get_fb().ds.get_width(), get_fb().ds.get_height() ) );
 }
 
-void Complete::apply_string( const string& diff )
+void Complete::apply_string( std::string_view diff )
 {
   HostBuffers::HostMessage input;
-  fatal_assert( input.ParseFromString( diff ) );
+  fatal_assert( input.ParseFromArray( diff.data(), diff.size() ) );
 
   for ( int i = 0; i < input.instruction_size(); i++ ) {
     if ( input.instruction( i ).HasExtension( hostbytes ) ) {

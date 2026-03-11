@@ -37,6 +37,7 @@
 #include <deque>
 #include <list>
 #include <string>
+#include <string_view>
 
 #include "src/terminal/parseraction.h"
 
@@ -87,7 +88,7 @@ public:
   void subtract( const UserStream* prefix );
   std::string diff_from( const UserStream& existing ) const;
   std::string init_diff( void ) const { return diff_from( UserStream() ); };
-  void apply_string( const std::string& diff );
+  void apply_string( std::string_view diff );
   bool operator==( const UserStream& x ) const { return actions == x.actions; }
 
   bool compare( const UserStream& ) { return false; }

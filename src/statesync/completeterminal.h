@@ -35,6 +35,7 @@
 
 #include <cstdint>
 #include <list>
+#include <string_view>
 
 #include "src/terminal/parser.h"
 #include "src/terminal/terminal.h"
@@ -79,7 +80,7 @@ public:
   void subtract( const Complete* ) const {}
   std::string diff_from( const Complete& existing ) const;
   std::string init_diff( void ) const;
-  void apply_string( const std::string& diff );
+  void apply_string( std::string_view diff );
   bool operator==( const Complete& x ) const;
 
   bool compare( const Complete& other ) const;

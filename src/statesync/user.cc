@@ -31,6 +31,7 @@
 */
 
 #include <cassert>
+#include <string_view>
 #include <typeinfo>
 
 #include "src/protobufs/userinput.pb.h"
@@ -100,10 +101,10 @@ std::string UserStream::diff_from( const UserStream& existing ) const
   return output.SerializeAsString();
 }
 
-void UserStream::apply_string( const std::string& diff )
+void UserStream::apply_string( std::string_view diff )
 {
   ClientBuffers::UserMessage input;
-  fatal_assert( input.ParseFromString( diff ) );
+  fatal_assert( input.ParseFromArray( diff.data(), diff.size() ) );
 
   for ( int i = 0; i < input.instruction_size(); i++ ) {
     if ( input.instruction( i ).HasExtension( keystroke ) ) {

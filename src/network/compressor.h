@@ -34,6 +34,7 @@
 #define COMPRESSOR_H
 
 #include <string>
+#include <string_view>
 
 namespace Network {
 class Compressor
@@ -47,8 +48,8 @@ public:
   Compressor() : buffer() {}
   ~Compressor() {}
 
-  std::string compress_str( const std::string& input );
-  std::string uncompress_str( const std::string& input );
+  std::string compress_str( std::string_view input );
+  std::string uncompress_str( std::string_view input );
 
   /* unused */
   Compressor( const Compressor& );

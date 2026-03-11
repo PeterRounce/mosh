@@ -30,6 +30,7 @@
     also delete it here.
 */
 
+#include <string_view>
 #include <zlib.h>
 
 #include "compressor.h"
@@ -37,7 +38,7 @@
 
 using namespace Network;
 
-std::string Compressor::compress_str( const std::string& input )
+std::string Compressor::compress_str( std::string_view input )
 {
   long unsigned int len = BUFFER_SIZE;
   dos_assert( Z_OK
@@ -45,7 +46,7 @@ std::string Compressor::compress_str( const std::string& input )
   return std::string( reinterpret_cast<char*>( buffer ), len );
 }
 
-std::string Compressor::uncompress_str( const std::string& input )
+std::string Compressor::uncompress_str( std::string_view input )
 {
   long unsigned int len = BUFFER_SIZE;
   dos_assert( Z_OK
