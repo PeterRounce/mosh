@@ -385,6 +385,9 @@ private:
   title_type clipboard;
   unsigned int bell_count;
   bool title_initialized; /* true if the window title has been set via an OSC */
+  uint64_t generation_;
+
+  void bump_generation() { ++generation_; }
 
   row_pointer newrow( void )
   {
@@ -432,6 +435,7 @@ public:
     if ( mutable_row.use_count() > 1 ) {
       mutable_row = std::make_shared<Row>( *mutable_row );
     }
+    bump_generation();
     return mutable_row.get();
   }
 
@@ -444,6 +448,8 @@ public:
 
     return &get_mutable_row( row )->cells.at( col );
   }
+
+  uint64_t generation() const { return generation_; }
 
   Cell* get_combining_cell( void );
 

@@ -38,8 +38,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr local.test $(displaytests)
+check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale framebuffer-gen
+TESTS = ocb-aes encrypt-decrypt base64 nonce-incr framebuffer-gen local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -71,6 +71,10 @@ inpty_LDADD = ../util/libmoshutil.a
 is_utf8_locale_SOURCES = is-utf8-locale.cc
 is_utf8_locale_CPPFLAGS = -I$(srcdir)/../util
 is_utf8_locale_LDADD = ../util/libmoshutil.a $(LIBUTIL)
+
+framebuffer_gen_SOURCES = framebuffer-gen.cc
+framebuffer_gen_CPPFLAGS = -I$(srcdir)/../terminal -I$(srcdir)/../util $(PROTOBUF_CFLAGS)
+framebuffer_gen_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../protobufs/libmoshprotos.a $(PROTOBUF_LIBS) $(TINFO_LIBS)
 
 clean-local: clean-local-check
 .PHONY: clean-local-check

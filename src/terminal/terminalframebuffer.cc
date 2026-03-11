@@ -73,7 +73,7 @@ DrawState::DrawState( int s_width, int s_height )
 
 Framebuffer::Framebuffer( int s_width, int s_height )
   : rows(), icon_name(), window_title(), clipboard(), bell_count( 0 ), title_initialized( false ),
-    ds( s_width, s_height )
+    generation_( 0 ), ds( s_width, s_height )
 {
   assert( s_height > 0 );
   assert( s_width > 0 );
@@ -85,7 +85,7 @@ Framebuffer::Framebuffer( int s_width, int s_height )
 Framebuffer::Framebuffer( const Framebuffer& other )
   : rows( other.rows ), icon_name( other.icon_name ), window_title( other.window_title ),
     clipboard( other.clipboard ), bell_count( other.bell_count ), title_initialized( other.title_initialized ),
-    ds( other.ds )
+    generation_( other.generation_ ), ds( other.ds )
 {}
 
 Framebuffer& Framebuffer::operator=( const Framebuffer& other )
@@ -97,6 +97,7 @@ Framebuffer& Framebuffer::operator=( const Framebuffer& other )
     clipboard = other.clipboard;
     bell_count = other.bell_count;
     title_initialized = other.title_initialized;
+    generation_ = other.generation_;
     ds = other.ds;
   }
   return *this;
@@ -109,6 +110,7 @@ void Framebuffer::scroll( int N )
   } else {
     insert_line( ds.get_scrolling_region_top_row(), -N );
   }
+  bump_generation();
 }
 
 void DrawState::new_grapheme( void )
@@ -365,11 +367,13 @@ void Row::delete_cell( int col, color_type background_color )
 void Framebuffer::insert_cell( int row, int col )
 {
   get_mutable_row( row )->insert_cell( col, ds.get_background_rendition() );
+  bump_generation();
 }
 
 void Framebuffer::delete_cell( int row, int col )
 {
   get_mutable_row( row )->delete_cell( col, ds.get_background_rendition() );
+  bump_generation();
 }
 
 void Framebuffer::reset( void )
@@ -380,6 +384,7 @@ void Framebuffer::reset( void )
   window_title.clear();
   clipboard.clear();
   /* do not reset bell_count */
+  bump_generation();
 }
 
 void Framebuffer::soft_reset( void )
@@ -407,6 +412,7 @@ void Framebuffer::resize( int s_width, int s_height )
     rows.resize( s_height, blankrow );
   }
   if ( oldwidth == s_width ) {
+    bump_generation();
     return;
   }
   for ( rows_type::iterator i = rows.begin(); i != rows.end() && *i != blankrow; i++ ) {
@@ -414,6 +420,7 @@ void Framebuffer::resize( int s_width, int s_height )
     ( *i )->set_wrap( false );
     ( *i )->cells.resize( s_width, Cell( ds.get_background_rendition() ) );
   }
+  bump_generation();
 }
 
 void DrawState::resize( int s_width, int s_height )
