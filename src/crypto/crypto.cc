@@ -43,7 +43,6 @@
 #include "src/crypto/byteorder.h"
 #include "src/crypto/crypto.h"
 #include "src/crypto/prng.h"
-#include "src/util/fatal_assert.h"
 
 using namespace Crypto;
 

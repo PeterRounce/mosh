@@ -232,7 +232,7 @@ Connection::Connection( const char* desired_ip, const char* desired_port ) /* se
     key(), session( key ), direction( TO_CLIENT ), saved_timestamp( -1 ), saved_timestamp_received_at( 0 ),
     expected_receiver_seq( 0 ), last_heard( -1 ), last_port_choice( -1 ), last_roundtrip_success( -1 ),
     RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ), last_recv_timestamp_( 0 ), reconnection_samples_( 0 ),
-    send_error()
+    send_error(), cached_fds_()
 {
   setup();
 
@@ -344,7 +344,7 @@ Connection::Connection( const char* key_str, const char* ip, const char* port ) 
     MTU( DEFAULT_SEND_MTU ), key( key_str ), session( key ), direction( TO_SERVER ), saved_timestamp( -1 ),
     saved_timestamp_received_at( 0 ), expected_receiver_seq( 0 ), last_heard( -1 ), last_port_choice( -1 ),
     last_roundtrip_success( -1 ), RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ),
-    last_recv_timestamp_( 0 ), reconnection_samples_( 0 ), send_error()
+    last_recv_timestamp_( 0 ), reconnection_samples_( 0 ), send_error(), cached_fds_()
 {
   setup();
 
