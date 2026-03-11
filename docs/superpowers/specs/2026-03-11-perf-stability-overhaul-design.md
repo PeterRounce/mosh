@@ -18,7 +18,7 @@
   - `last_local_generation_` — the framebuffer generation at last diff computation.
   - `last_assumed_receiver_num_` — the sequence number of `assumed_receiver_state` at last diff computation. This captures when `update_assumed_receiver_state()` advances the assumed receiver (which happens every tick an ack is processed), which would change the diff result even if the terminal is idle.
 - In `tick()`, skip `diff_from()` and reuse the cached diff only when **both** the local generation and assumed receiver num are unchanged.
-- `attempt_prospective_resend_optimization()` also calls `diff_from()` against a different base (`sent_states.front().state`). This call uses a **separate** cache (`resend_diff_cache_`) with its own generation/num tracking, since it diffs against a different base state.
+- `attempt_prospective_resend_optimization()` also calls `diff_from()` against a different base (`sent_states.front().state`). This call uses a **separate** cache (`resend_diff_cache_`) with its own validity tracking: local generation, and `resend_base_num_` — the sequence number of `sent_states.front()` at the time the resend diff was computed. The resend cache is invalidated whenever `resend_base_num_ != sent_states.front().num` (which changes when `process_acknowledgment_through()` trims the front of `sent_states`).
 - On reconnection (when `assumed_receiver_state` resets), force a full diff regardless of generation.
 
 **Impact:** Eliminates ~95% of diff computation during idle sessions. After reconnection, the first diff is still full-cost but subsequent idle ticks are free.
@@ -75,7 +75,7 @@
 - Keep the existing `Compressor` singleton pattern, just swap internals.
 - Pre-allocate output buffer as a member. Size at construction time using `ZSTD_compressBound()` with a conservative max payload assumption (the existing `BUFFER_SIZE = 2048*2048` static buffer). If a payload exceeds the pre-allocated size, fall back to dynamic allocation (should never happen in practice given mosh's packet sizes).
 - Return `std::string_view` or write into caller-provided buffer instead of returning `std::string` by value.
-- **Error handling:** zstd returns error codes as negative `size_t` values, checked via `ZSTD_isError()`. Replace the current `dos_assert(Z_OK == compress(...))` pattern with `fatal_assert(!ZSTD_isError(result))` to match mosh's existing assertion conventions.
+- **Error handling:** zstd signals errors by returning large `size_t` values (near `SIZE_MAX`), not negative values — `size_t` is unsigned. Always check with `ZSTD_isError(result)`, never `result < 0` (which is always false for unsigned). Replace the current `dos_assert(Z_OK == compress(...))` pattern with `fatal_assert(!ZSTD_isError(result))` to match mosh's existing assertion conventions.
 
 **Wire compatibility:** Breaking change. Protocol version in `transportfragment` header must be bumped. Both client and server must be updated together.
 
@@ -128,7 +128,8 @@
 - **Key size:** Expand `Base64Key` from 16 bytes (128-bit, current AES-128-OCB) to 32 bytes (256-bit) for XChaCha20-Poly1305. This changes the session key string format — the base64-encoded key passed from `mosh-server` to `mosh-client` becomes longer. Update `MOSH_KEY` environment variable handling and key parsing accordingly. This is a breaking change already bundled with the protocol version bump.
 - **Nonce handling:** XChaCha20-Poly1305 uses a 24-byte nonce (vs current 8-byte `Nonce` that fits in `cc_str()`). Update the `Nonce` class to hold 24 bytes. The nonce is transmitted in the packet header, so the packet format changes accordingly (part of the protocol version bump).
 - **Key material security:** Use `sodium_mlock()` on key storage buffers to prevent swap exposure. Use `sodium_memzero()` for key destruction. Replace the existing `AlignedBuffer` + `disable_dumping_core()` pattern with libsodium's secure memory APIs (`sodium_malloc()` / `sodium_free()`).
-- **Batch encryption for fragments:** Encrypt the full payload once, then split into fragments with per-fragment authentication tags. Amortizes AEAD setup cost across fragments.
+- **Per-fragment encryption:** Encrypt each fragment individually under a unique nonce derived from the packet sequence number, as in the current design. XChaCha20-Poly1305's 192-bit nonce space makes per-fragment nonce exhaustion a non-concern. (The original "batch encrypt then split" idea is unsound — an AEAD tag authenticates the entire ciphertext, not arbitrary sub-slices, so individual fragments couldn't be verified on receipt.)
+- **API naming note:** The correct libsodium functions are `crypto_aead_xchacha20poly1305_ietf_encrypt()` / `crypto_aead_xchacha20poly1305_ietf_decrypt()`. The `x` prefix is critical — `crypto_aead_chacha20poly1305_ietf_*` (without `x`) is a different cipher with a 12-byte nonce and must not be used.
 - **Wire compatibility:** Breaking change (different cipher, key size, nonce size). Bump protocol version alongside zstd change.
 - **Remove:** Entire `ocb_internal.cc` custom OCB implementation and three-backend abstraction.
 
