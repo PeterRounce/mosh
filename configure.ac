@@ -531,6 +531,9 @@ AC_CHECK_DECL([IUTF8],
   [AC_MSG_WARN([No IUTF8 termios mode; character-erase of multibyte character sequence probably does not work properly in canonical mode on this platform.])],
   [[#include <termios.h>]])
 
+# Checks for xxhash
+PKG_CHECK_MODULES([XXHASH], [libxxhash])
+
 # Checks for protobuf
 PKG_CHECK_MODULES([protobuf], [protobuf])
 

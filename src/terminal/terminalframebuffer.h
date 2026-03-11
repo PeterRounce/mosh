@@ -96,6 +96,13 @@ public:
   }
   bool get_attribute( attribute_type attr ) const { return attributes & ( 1 << attr ); }
   void clear_attributes() { attributes = 0; }
+
+  /* Pack rendition fields into a deterministic 64-bit value for hashing. */
+  uint64_t packed_for_hash() const
+  {
+    return ( static_cast<uint64_t>( foreground_color ) ) | ( static_cast<uint64_t>( background_color ) << 25 )
+           | ( static_cast<uint64_t>( attributes ) << 50 );
+  }
 };
 
 class Cell
@@ -208,6 +215,8 @@ public:
   void set_fallback( bool f ) { fallback = f; }
   bool get_wrap( void ) const { return wrap; }
   void set_wrap( bool f ) { wrap = f; }
+
+  friend class Row; /* Row::hash() needs access to private fields for hashing. */
 };
 
 class Row
@@ -221,6 +230,9 @@ public:
   uint64_t gen;
 
 private:
+  mutable uint64_t hash_;
+  mutable bool hash_dirty_;
+
   Row();
 
 public:
@@ -234,9 +246,17 @@ public:
   bool operator==( const Row& x ) const { return ( gen == x.gen && cells == x.cells ); }
 
   bool get_wrap( void ) const { return cells.back().get_wrap(); }
-  void set_wrap( bool w ) { cells.back().set_wrap( w ); }
+  void set_wrap( bool w )
+  {
+    cells.back().set_wrap( w );
+    invalidate_hash();
+  }
 
   uint64_t get_gen() const;
+
+  /* Lazy XXH3 content hash for scroll detection. */
+  uint64_t hash() const;
+  void invalidate_hash() { hash_dirty_ = true; }
 };
 
 class SavedCursor
@@ -436,6 +456,7 @@ public:
       mutable_row = std::make_shared<Row>( *mutable_row );
     }
     bump_generation();
+    mutable_row->invalidate_hash();
     return mutable_row.get();
   }
 
