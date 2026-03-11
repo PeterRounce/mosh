@@ -55,16 +55,34 @@ TransportSender<MyState>::TransportSender( Connection* s_connection, MyState& in
     shutdown_start( -1 ), ack_num( 0 ), pending_data_ack( false ), SEND_MINDELAY( 8 ), last_heard( 0 ), prng(),
     mindelay_clock( -1 ), cached_diff_(), last_local_generation_( 0 ), last_assumed_receiver_num_( 0 ),
     cached_resend_diff_(), resend_base_num_( 0 ), resend_local_generation_( 0 ), diff_buffer_(),
-    resend_diff_buffer_()
+    resend_diff_buffer_(), burst_until_( 0 )
 {}
+
+/* Returns adaptive minimum send interval based on SRTT */
+template<class MyState>
+int TransportSender<MyState>::adaptive_send_interval_min( void ) const
+{
+  double srtt = connection->get_SRTT();
+  if ( srtt < 10.0 ) {
+    return 8;  /* LAN: ~125fps */
+  } else if ( srtt < 50.0 ) {
+    return 15; /* Regional: ~67fps */
+  } else {
+    return 20; /* WAN: ~50fps */
+  }
+}
 
 /* Try to send roughly two frames per RTT, bounded by limits on frame rate */
 template<class MyState>
 unsigned int TransportSender<MyState>::send_interval( void ) const
 {
+  if ( burst_until_ > 0 && Network::timestamp() < burst_until_ ) {
+    return BURST_INTERVAL;
+  }
+
   int SEND_INTERVAL = lrint( ceil( connection->get_SRTT() / 2.0 ) );
-  if ( SEND_INTERVAL < SEND_INTERVAL_MIN ) {
-    SEND_INTERVAL = SEND_INTERVAL_MIN;
+  if ( SEND_INTERVAL < adaptive_send_interval_min() ) {
+    SEND_INTERVAL = adaptive_send_interval_min();
   } else if ( SEND_INTERVAL > SEND_INTERVAL_MAX ) {
     SEND_INTERVAL = SEND_INTERVAL_MAX;
   }

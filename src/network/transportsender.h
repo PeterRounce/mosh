@@ -49,7 +49,7 @@ using namespace TransportBuffers;
 const int SEND_INTERVAL_MIN = 20;       /* ms between frames */
 const int SEND_INTERVAL_MAX = 250;      /* ms between frames */
 const int ACK_INTERVAL = 3000;          /* ms between empty acks */
-const int ACK_DELAY = 100;              /* ms before delayed ack */
+const int ACK_DELAY = 30;               /* ms before delayed ack */
 const int SHUTDOWN_RETRIES = 16;        /* number of shutdown packets to send before giving up */
 const int ACTIVE_RETRY_TIMEOUT = 10000; /* attempt to resend at frame rate */
 
@@ -119,6 +119,13 @@ private:
   /* Pre-allocated diff output buffers */
   std::string diff_buffer_;
   std::string resend_diff_buffer_;
+
+  /* Burst mode for reconnection */
+  uint64_t burst_until_;
+  static constexpr int BURST_INTERVAL = 4;    /* ms during burst */
+  static constexpr int BURST_DURATION = 500;  /* ms of burst after reconnection */
+
+  int adaptive_send_interval_min( void ) const;
 
 public:
   /* constructor */
