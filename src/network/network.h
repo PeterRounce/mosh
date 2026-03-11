@@ -196,6 +196,8 @@ private:
   /* Error from send()/sendto(). */
   std::string send_error;
 
+  mutable std::vector<int> cached_fds_;
+
   Packet new_packet( const std::string& s_payload );
 
   void hop_port( void );
@@ -221,7 +223,7 @@ public:
 
   void send( const std::string& s );
   std::string recv( void );
-  const std::vector<int> fds( void ) const;
+  const std::vector<int>& fds( void ) const;
   int get_MTU( void ) const { return MTU; }
 
   std::string port( void ) const;

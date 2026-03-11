@@ -108,7 +108,7 @@ public:
 
   const TimestampedState<RemoteState>& get_latest_remote_state( void ) const { return received_states.back(); }
 
-  const std::vector<int> fds( void ) const { return connection.fds(); }
+  const std::vector<int>& fds( void ) const { return connection.fds(); }
 
   void set_verbose( unsigned int s_verbose )
   {

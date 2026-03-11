@@ -182,15 +182,15 @@ void Connection::setup( void )
   last_port_choice = timestamp();
 }
 
-const std::vector<int> Connection::fds( void ) const
+const std::vector<int>& Connection::fds( void ) const
 {
-  std::vector<int> ret;
+  cached_fds_.clear();
 
   for ( std::deque<Socket>::const_iterator it = socks.begin(); it != socks.end(); it++ ) {
-    ret.push_back( it->fd() );
+    cached_fds_.push_back( it->fd() );
   }
 
-  return ret;
+  return cached_fds_;
 }
 
 void Connection::set_MTU( int family )
