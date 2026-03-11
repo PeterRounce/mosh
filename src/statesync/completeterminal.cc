@@ -91,7 +91,9 @@ void Complete::diff_from( const Complete& existing, string* out ) const
     }
   }
 
-  out->assign( output.SerializeAsString() );
+  size_t serial_size = output.ByteSizeLong();
+  out->resize( serial_size );
+  output.SerializeToArray( out->data(), serial_size );
 }
 
 void Complete::init_diff( string* out ) const

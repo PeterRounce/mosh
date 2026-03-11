@@ -98,7 +98,9 @@ void UserStream::diff_from( const UserStream& existing, std::string* out ) const
     my_it++;
   }
 
-  out->assign( output.SerializeAsString() );
+  size_t serial_size = output.ByteSizeLong();
+  out->resize( serial_size );
+  output.SerializeToArray( out->data(), serial_size );
 }
 
 void UserStream::apply_string( std::string_view diff )

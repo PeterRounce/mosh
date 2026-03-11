@@ -41,30 +41,21 @@
 using namespace Network;
 using namespace TransportBuffers;
 
-static std::string network_order_string( uint16_t host_order )
-{
-  uint16_t net_int = htobe16( host_order );
-  return std::string( (char*)&net_int, sizeof( net_int ) );
-}
-
-static std::string network_order_string( uint64_t host_order )
-{
-  uint64_t net_int = htobe64( host_order );
-  return std::string( (char*)&net_int, sizeof( net_int ) );
-}
-
 std::string Fragment::tostring( void )
 {
   assert( initialized );
 
   std::string ret;
+  ret.resize( frag_header_len );
 
-  ret += network_order_string( id );
+  uint64_t net_id = htobe64( id );
+  memcpy( &ret[0], &net_id, sizeof( net_id ) );
 
   fatal_assert(
     !( fragment_num & 0x8000 ) ); /* effective limit on size of a terminal screen change or buffered user input */
   uint16_t combined_fragment_num = ( final << 15 ) | fragment_num;
-  ret += network_order_string( combined_fragment_num );
+  uint16_t net_frag = htobe16( combined_fragment_num );
+  memcpy( &ret[sizeof( net_id )], &net_frag, sizeof( net_frag ) );
 
   assert( ret.size() == frag_header_len );
 
@@ -171,7 +162,11 @@ std::vector<Fragment> Fragmenter::make_fragments( const Instruction& inst, size_
   last_instruction = inst;
   last_MTU = MTU;
 
-  std::string payload = get_compressor().compress_str( inst.SerializeAsString() );
+  size_t serial_size = inst.ByteSizeLong();
+  std::string serial_buf;
+  serial_buf.resize( serial_size );
+  inst.SerializeToArray( serial_buf.data(), serial_size );
+  std::string payload = get_compressor().compress_str( serial_buf );
   uint16_t fragment_num = 0;
   std::vector<Fragment> ret;
 
