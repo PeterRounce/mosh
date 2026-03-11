@@ -48,7 +48,7 @@ using namespace Crypto;
 
 PRNG prng;
 
-const size_t MESSAGE_SIZE_MAX = ( 2048 - 16 );
+const size_t MESSAGE_SIZE_MAX = ( 2048 - crypto_aead_xchacha20poly1305_ietf_ABYTES );
 const size_t MESSAGES_PER_SESSION = 256;
 const size_t NUM_SESSIONS = 64;
 
@@ -97,7 +97,7 @@ static void test_one_session( void )
   uint64_t nonce_int = prng.uint64();
 
   if ( verbose ) {
-    hexdump( key.data(), 16, "key" );
+    hexdump( key.data(), Base64Key::KEY_LEN, "key" );
   }
 
   for ( size_t i = 0; i < MESSAGES_PER_SESSION; i++ ) {

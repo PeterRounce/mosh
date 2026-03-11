@@ -50,7 +50,7 @@
 using namespace Crypto;
 
 namespace Network {
-static const unsigned int MOSH_PROTOCOL_VERSION = 2; /* bumped for echo-ack */
+static const unsigned int MOSH_PROTOCOL_VERSION = 3; /* bumped for XChaCha20-Poly1305 */
 
 uint64_t timestamp( void );
 uint16_t timestamp16( void );
@@ -216,7 +216,7 @@ private:
 
 public:
   /* Network transport overhead. */
-  static const int ADDED_BYTES = 8 /* seqno/nonce */ + 4 /* timestamps */;
+  static const int ADDED_BYTES = 24 /* seqno/nonce */ + 4 /* timestamps */;
 
   Connection( const char* desired_ip, const char* desired_port );      /* server */
   Connection( const char* key_str, const char* ip, const char* port ); /* client */

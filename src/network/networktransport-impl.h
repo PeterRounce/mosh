@@ -74,7 +74,10 @@ void Transport<MyState, RemoteState>::recv( void )
     Instruction inst = fragments.get_assembly();
 
     if ( inst.protocol_version() != MOSH_PROTOCOL_VERSION ) {
-      throw NetworkException( "mosh protocol version mismatch", 0 );
+      throw NetworkException( "mosh protocol version mismatch: expected "
+                                + std::to_string( MOSH_PROTOCOL_VERSION ) + ", got "
+                                + std::to_string( inst.protocol_version() ),
+                              0 );
     }
 
     sender.process_acknowledgment_through( inst.ack_num() );

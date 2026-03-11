@@ -71,60 +71,27 @@ uint64_t Crypto::unique( void )
   return rv;
 }
 
-AlignedBuffer::AlignedBuffer( size_t len, const char* data ) : m_len( len ), m_allocated( NULL ), m_data( NULL )
-{
-  size_t alloc_len = len ? len : 1;
-#if defined( HAVE_POSIX_MEMALIGN )
-  if ( ( 0 != posix_memalign( &m_allocated, 16, alloc_len ) ) || ( m_allocated == NULL ) ) {
-    throw std::bad_alloc();
-  }
-  m_data = (char*)m_allocated;
-
-#else
-  /* malloc() a region 15 bytes larger than we need, and find
-     the aligned offset within. */
-  m_allocated = malloc( 15 + alloc_len );
-  if ( m_allocated == NULL ) {
-    throw std::bad_alloc();
-  }
-
-  uintptr_t iptr = (uintptr_t)m_allocated;
-  if ( iptr & 0xF ) {
-    iptr += 16 - ( iptr & 0xF );
-  }
-  assert( !( iptr & 0xF ) );
-  assert( iptr >= (uintptr_t)m_allocated );
-  assert( iptr <= ( 15 + (uintptr_t)m_allocated ) );
-
-  m_data = (char*)iptr;
-
-#endif /* !defined(HAVE_POSIX_MEMALIGN) */
-
-  if ( data ) {
-    memcpy( m_data, data, len );
-  }
-}
-
 Base64Key::Base64Key( std::string printable_key )
 {
-  if ( printable_key.length() != 22 ) {
-    throw CryptoException( "Key must be 22 letters long." );
+  /* 32 bytes base64-encoded = 44 characters with padding, 43 without trailing '=' */
+  if ( printable_key.length() != 43 ) {
+    throw CryptoException( "Key must be 43 letters long." );
   }
 
-  std::string base64 = printable_key + "==";
+  std::string base64 = printable_key + "=";
 
-  size_t len = 16;
-  if ( !base64_decode( base64.data(), 24, key, &len ) ) {
+  size_t len = 32;
+  if ( !base64_decode( base64.data(), 44, key, &len ) ) {
     throw CryptoException( "Key must be well-formed base64." );
   }
 
-  if ( len != 16 ) {
-    throw CryptoException( "Key must represent 16 octets." );
+  if ( len != 32 ) {
+    throw CryptoException( "Key must represent 32 octets." );
   }
 
-  /* to catch changes after the first 128 bits */
+  /* to catch changes after the first 256 bits */
   if ( printable_key != this->printable_key() ) {
-    throw CryptoException( "Base64 key was not encoded 128-bit key." );
+    throw CryptoException( "Base64 key was not encoded 256-bit key." );
   }
 }
 
@@ -140,145 +107,156 @@ Base64Key::Base64Key( PRNG& prng )
 
 std::string Base64Key::printable_key( void ) const
 {
-  char base64[24];
+  char base64[45];
 
-  base64_encode( key, 16, base64, 24 );
+  base64_encode( key, 32, base64, 44 );
 
-  if ( ( base64[23] != '=' ) || ( base64[22] != '=' ) ) {
-    throw CryptoException( std::string( "Unexpected output from base64_encode: " ) + std::string( base64, 24 ) );
+  if ( base64[43] != '=' ) {
+    throw CryptoException( std::string( "Unexpected output from base64_encode: " ) + std::string( base64, 44 ) );
   }
 
-  base64[22] = 0;
+  base64[43] = 0;
   return std::string( base64 );
 }
 
-Session::Session( Base64Key s_key )
-  : key( s_key ), ctx_buf( ae_ctx_sizeof() ), ctx( (ae_ctx*)ctx_buf.data() ), blocks_encrypted( 0 ),
-    plaintext_buffer( RECEIVE_MTU ), ciphertext_buffer( RECEIVE_MTU ), nonce_buffer( Nonce::NONCE_LEN )
+static void ensure_sodium_init( void )
 {
-  if ( AE_SUCCESS != ae_init( ctx, key.data(), 16, 12, 16 ) ) {
-    throw CryptoException( "Could not initialize AES-OCB context." );
+  static bool initialized = false;
+  if ( !initialized ) {
+    if ( sodium_init() < 0 ) {
+      throw CryptoException( "Could not initialize libsodium.", true );
+    }
+    initialized = true;
   }
+}
+
+Session::Session( Base64Key s_key ) : blocks_encrypted( 0 )
+{
+  ensure_sodium_init();
+
+  static_assert( sizeof( key ) == Base64Key::KEY_LEN, "Key size mismatch" );
+  memcpy( key, s_key.data(), sizeof( key ) );
+  sodium_mlock( key, sizeof( key ) );
 }
 
 Session::~Session()
 {
-  fatal_assert( ae_clear( ctx ) == AE_SUCCESS );
+  sodium_memzero( key, sizeof( key ) );
+  sodium_munlock( key, sizeof( key ) );
+}
+
+Session::Session( const Session& other ) : blocks_encrypted( other.blocks_encrypted )
+{
+  memcpy( key, other.key, sizeof( key ) );
+  sodium_mlock( key, sizeof( key ) );
+}
+
+Session& Session::operator=( const Session& other )
+{
+  if ( this != &other ) {
+    sodium_memzero( key, sizeof( key ) );
+    sodium_munlock( key, sizeof( key ) );
+    memcpy( key, other.key, sizeof( key ) );
+    sodium_mlock( key, sizeof( key ) );
+    blocks_encrypted = other.blocks_encrypted;
+  }
+  return *this;
 }
 
 Nonce::Nonce( uint64_t val )
 {
   uint64_t val_net = htobe64( val );
 
-  memset( bytes, 0, 4 );
-  memcpy( bytes + 4, &val_net, 8 );
+  memset( bytes, 0, 16 );
+  memcpy( bytes + 16, &val_net, 8 );
 }
 
 uint64_t Nonce::val( void ) const
 {
   uint64_t ret;
-  memcpy( &ret, bytes + 4, 8 );
+  memcpy( &ret, bytes + 16, 8 );
   return be64toh( ret );
 }
 
 Nonce::Nonce( const char* s_bytes, size_t len )
 {
-  if ( len != 8 ) {
-    throw CryptoException( "Nonce representation must be 8 octets long." );
+  if ( len != NONCE_LEN ) {
+    throw CryptoException( "Nonce representation must be 24 octets long." );
   }
 
-  memset( bytes, 0, 4 );
-  memcpy( bytes + 4, s_bytes, 8 );
+  memcpy( bytes, s_bytes, NONCE_LEN );
 }
 
 const std::string Session::encrypt( const Message& plaintext )
 {
   const size_t pt_len = plaintext.text.size();
-  const int ciphertext_len = pt_len + 16;
+  const size_t ciphertext_len = pt_len + crypto_aead_xchacha20poly1305_ietf_ABYTES;
 
-  assert( (size_t)ciphertext_len <= ciphertext_buffer.len() );
-  assert( pt_len <= plaintext_buffer.len() );
+  std::string ciphertext( ciphertext_len, '\0' );
+  unsigned long long actual_ciphertext_len = 0;
 
-  memcpy( plaintext_buffer.data(), plaintext.text.data(), pt_len );
-  memcpy( nonce_buffer.data(), plaintext.nonce.data(), Nonce::NONCE_LEN );
-
-  if ( ciphertext_len
-       != ae_encrypt( ctx,                      /* ctx */
-                      nonce_buffer.data(),      /* nonce */
-                      plaintext_buffer.data(),  /* pt */
-                      pt_len,                   /* pt_len */
-                      NULL,                     /* ad */
-                      0,                        /* ad_len */
-                      ciphertext_buffer.data(), /* ct */
-                      NULL,                     /* tag */
-                      AE_FINALIZE ) ) {         /* final */
-    throw CryptoException( "ae_encrypt() returned error." );
+  if ( crypto_aead_xchacha20poly1305_ietf_encrypt(
+         reinterpret_cast<unsigned char*>( &ciphertext[0] ),
+         &actual_ciphertext_len,
+         reinterpret_cast<const unsigned char*>( plaintext.text.data() ),
+         pt_len,
+         NULL, /* no additional data */
+         0,    /* ad_len */
+         NULL, /* nsec (unused) */
+         reinterpret_cast<const unsigned char*>( plaintext.nonce.data() ),
+         key )
+       != 0 ) {
+    throw CryptoException( "crypto_aead_xchacha20poly1305_ietf_encrypt() returned error." );
   }
+
+  assert( actual_ciphertext_len == ciphertext_len );
 
   blocks_encrypted += pt_len >> 4;
   if ( pt_len & 0xF ) {
-    /* partial block */
     blocks_encrypted++;
   }
 
-  /* "Both the privacy and the authenticity properties of OCB degrade as
-      per s^2 / 2^128, where s is the total number of blocks that the
-      adversary acquires.... In order to ensure that s^2 / 2^128 remains
-      small, a given key should be used to encrypt at most 2^48 blocks (2^55
-      bits or 4 petabytes)"
-
-     -- http://tools.ietf.org/html/draft-krovetz-ocb-03
-
-     We deem it unlikely that a legitimate user will send 4 PB through a Mosh
-     session.  If it happens, we simply kill the session.  The server and
-     client use the same key, so we actually need to die after 2^47 blocks.
-  */
+  /* XChaCha20-Poly1305 has a much larger security margin than OCB,
+     but we keep the same conservative limit as a safety measure.
+     With 256-bit keys and 192-bit nonces, the actual limit is far higher. */
   if ( blocks_encrypted >> 47 ) {
     throw CryptoException( "Encrypted 2^47 blocks.", true );
   }
 
-  std::string text( ciphertext_buffer.data(), ciphertext_len );
-
-  return plaintext.nonce.cc_str() + text;
+  return plaintext.nonce.cc_str() + ciphertext;
 }
 
 const Message Session::decrypt( const char* str, size_t len )
 {
-  if ( len < 24 ) {
+  if ( len < Nonce::NONCE_LEN + crypto_aead_xchacha20poly1305_ietf_ABYTES ) {
     throw CryptoException( "Ciphertext must contain nonce and tag." );
   }
 
-  int body_len = len - 8;
-  int pt_len = body_len - 16;
+  size_t body_len = len - Nonce::NONCE_LEN;
+  size_t pt_len = body_len - crypto_aead_xchacha20poly1305_ietf_ABYTES;
 
-  if ( pt_len < 0 ) { /* super-assertion that pt_len does not equal AE_INVALID */
-    fprintf( stderr, "BUG.\n" );
-    exit( 1 );
-  }
+  Nonce nonce( str, Nonce::NONCE_LEN );
 
-  assert( (size_t)body_len <= ciphertext_buffer.len() );
-  assert( (size_t)pt_len <= plaintext_buffer.len() );
+  std::string plaintext( pt_len, '\0' );
+  unsigned long long actual_pt_len = 0;
 
-  Nonce nonce( str, 8 );
-  memcpy( ciphertext_buffer.data(), str + 8, body_len );
-  memcpy( nonce_buffer.data(), nonce.data(), Nonce::NONCE_LEN );
-
-  if ( pt_len
-       != ae_decrypt( ctx,                      /* ctx */
-                      nonce_buffer.data(),      /* nonce */
-                      ciphertext_buffer.data(), /* ct */
-                      body_len,                 /* ct_len */
-                      NULL,                     /* ad */
-                      0,                        /* ad_len */
-                      plaintext_buffer.data(),  /* pt */
-                      NULL,                     /* tag */
-                      AE_FINALIZE ) ) {         /* final */
+  if ( crypto_aead_xchacha20poly1305_ietf_decrypt(
+         reinterpret_cast<unsigned char*>( &plaintext[0] ),
+         &actual_pt_len,
+         NULL, /* nsec (unused) */
+         reinterpret_cast<const unsigned char*>( str + Nonce::NONCE_LEN ),
+         body_len,
+         NULL, /* no additional data */
+         0,    /* ad_len */
+         reinterpret_cast<const unsigned char*>( nonce.data() ),
+         key )
+       != 0 ) {
     throw CryptoException( "Packet failed integrity check." );
   }
 
-  const Message ret( nonce, std::string( plaintext_buffer.data(), pt_len ) );
+  assert( actual_pt_len == pt_len );
 
-  return ret;
+  return Message( nonce, plaintext );
 }
 
 static rlim_t saved_core_rlimit;
