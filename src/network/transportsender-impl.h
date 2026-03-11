@@ -55,7 +55,7 @@ TransportSender<MyState>::TransportSender( Connection* s_connection, MyState& in
     shutdown_start( -1 ), ack_num( 0 ), pending_data_ack( false ), SEND_MINDELAY( 8 ), last_heard( 0 ), prng(),
     mindelay_clock( -1 ), cached_diff_(), last_local_generation_( 0 ), last_assumed_receiver_num_( 0 ),
     cached_resend_diff_(), resend_base_num_( 0 ), resend_local_generation_( 0 ), diff_buffer_(),
-    resend_diff_buffer_(), burst_until_( 0 )
+    resend_diff_buffer_(), burst_until_( 0 ), reconnecting_( false ), reconnection_priority_( 0 )
 {}
 
 /* Returns adaptive minimum send interval based on SRTT */
@@ -174,9 +174,18 @@ void TransportSender<MyState>::tick( void )
   uint64_t current_gen = current_state.get_fb_generation();
   uint64_t current_assumed_num = assumed_receiver_state->num;
 
-  if ( current_gen == last_local_generation_
-       && current_assumed_num == last_assumed_receiver_num_
-       && !cached_diff_.empty() ) {
+  if ( reconnecting_ ) {
+    current_state.diff_from_priority( assumed_receiver_state->state, &diff_buffer_, reconnection_priority_ );
+    if ( reconnection_priority_ < 2 ) {
+      reconnection_priority_++;
+    } else {
+      reconnecting_ = false;
+    }
+    /* Invalidate cache since priority diff is not cacheable */
+    cached_diff_.clear();
+  } else if ( current_gen == last_local_generation_
+              && current_assumed_num == last_assumed_receiver_num_
+              && !cached_diff_.empty() ) {
     diff_buffer_ = cached_diff_;
   } else {
     current_state.diff_from( assumed_receiver_state->state, &diff_buffer_ );
@@ -392,6 +401,8 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
     assumed_receiver_state = sent_states.begin();
     cached_diff_.clear();
     cached_resend_diff_.clear();
+    reconnecting_ = true;
+    reconnection_priority_ = 0;
   }
 
   /* Ignore ack if we have culled the state it's acknowledging */

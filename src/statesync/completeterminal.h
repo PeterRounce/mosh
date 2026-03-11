@@ -80,6 +80,7 @@ public:
   /* interface for Network::Transport */
   void subtract( const Complete* ) const {}
   void diff_from( const Complete& existing, std::string* output ) const;
+  void diff_from_priority( const Complete& existing, std::string* output, int priority_level ) const;
   void init_diff( std::string* output ) const;
   void apply_string( std::string_view diff );
   bool operator==( const Complete& x ) const;

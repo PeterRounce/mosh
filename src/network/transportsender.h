@@ -125,6 +125,10 @@ private:
   static constexpr int BURST_INTERVAL = 4;    /* ms during burst */
   static constexpr int BURST_DURATION = 500;  /* ms of burst after reconnection */
 
+  /* Progressive resync after reconnection */
+  bool reconnecting_;
+  int reconnection_priority_;
+
   int adaptive_send_interval_min( void ) const;
 
 public:

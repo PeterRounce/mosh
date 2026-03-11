@@ -91,6 +91,10 @@ public:
   /* interface for Network::Transport */
   void subtract( const UserStream* prefix );
   void diff_from( const UserStream& existing, std::string* output ) const;
+  void diff_from_priority( const UserStream& existing, std::string* output, int ) const
+  {
+    diff_from( existing, output );
+  }
   void init_diff( std::string* output ) const { diff_from( UserStream(), output ); };
   void apply_string( std::string_view diff );
   bool operator==( const UserStream& x ) const { return actions == x.actions; }

@@ -96,6 +96,84 @@ void Complete::diff_from( const Complete& existing, string* out ) const
   output.SerializeToArray( out->data(), serial_size );
 }
 
+void Complete::diff_from_priority( const Complete& existing, string* out, int priority_level ) const
+{
+  /* Levels 1 and 2 produce a full diff (mosh only syncs visible framebuffer). */
+  if ( priority_level >= 1 ) {
+    diff_from( existing, out );
+    return;
+  }
+
+  /* Level 0: send only echo_ack, resize (if needed), cursor position, and current row content. */
+  HostBuffers::HostMessage output;
+
+  if ( existing.get_echo_ack() != get_echo_ack() ) {
+    assert( get_echo_ack() >= existing.get_echo_ack() );
+    Instruction* new_echo = output.add_instruction();
+    new_echo->MutableExtension( echoack )->set_echo_ack_num( get_echo_ack() );
+  }
+
+  const Framebuffer& fb = terminal.get_fb();
+  const Framebuffer& existing_fb = existing.get_fb();
+
+  if ( ( existing_fb.ds.get_width() != fb.ds.get_width() )
+       || ( existing_fb.ds.get_height() != fb.ds.get_height() ) ) {
+    Instruction* new_res = output.add_instruction();
+    new_res->MutableExtension( resize )->set_width( fb.ds.get_width() );
+    new_res->MutableExtension( resize )->set_height( fb.ds.get_height() );
+  }
+
+  /* Build a minimal ANSI sequence: reset attributes, move cursor to current row,
+     redraw only that row, then reposition cursor. */
+  string update;
+  int cursor_row = fb.ds.get_cursor_row();
+  int cursor_col = fb.ds.get_cursor_col();
+  int width = fb.ds.get_width();
+
+  /* Reset renditions */
+  update += "\033[0m";
+
+  /* Move to beginning of cursor row */
+  char tmp[64];
+  snprintf( tmp, sizeof( tmp ), "\033[%d;1H", cursor_row + 1 );
+  update += tmp;
+
+  /* Clear line */
+  update += "\033[2K";
+
+  /* Write every cell on the cursor row */
+  const Row* row = fb.get_row( cursor_row );
+  Renditions current_rend( 0 );
+  for ( int x = 0; x < width; x++ ) {
+    const Cell& cell = row->cells.at( x );
+    if ( !( cell.get_renditions() == current_rend ) ) {
+      update += cell.get_renditions().sgr();
+      current_rend = cell.get_renditions();
+    }
+    cell.print_grapheme( update );
+    /* Skip second column of wide characters */
+    if ( cell.get_wide() && x + 1 < width ) {
+      x++;
+    }
+  }
+
+  /* Reposition cursor */
+  snprintf( tmp, sizeof( tmp ), "\033[%d;%dH", cursor_row + 1, cursor_col + 1 );
+  update += tmp;
+
+  /* Restore cursor visibility */
+  update += fb.ds.cursor_visible ? "\033[?25h" : "\033[?25l";
+
+  if ( !update.empty() ) {
+    Instruction* new_inst = output.add_instruction();
+    new_inst->MutableExtension( hostbytes )->set_hoststring( update );
+  }
+
+  size_t serial_size = output.ByteSizeLong();
+  out->resize( serial_size );
+  output.SerializeToArray( out->data(), serial_size );
+}
+
 void Complete::init_diff( string* out ) const
 {
   diff_from( Complete( get_fb().ds.get_width(), get_fb().ds.get_height() ), out );
