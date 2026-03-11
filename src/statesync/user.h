@@ -34,6 +34,7 @@
 #define USER_HPP
 
 #include <cassert>
+#include <cstdint>
 #include <deque>
 #include <list>
 #include <string>
@@ -73,12 +74,15 @@ class UserStream
 {
 private:
   std::deque<UserEvent> actions;
+  mutable uint64_t user_gen_counter_ = 0;
 
 public:
   UserStream() : actions() {}
 
   void push_back( const Parser::UserByte& s_userbyte ) { actions.push_back( UserEvent( s_userbyte ) ); }
   void push_back( const Parser::Resize& s_resize ) { actions.push_back( UserEvent( s_resize ) ); }
+
+  uint64_t get_fb_generation() const { return ++user_gen_counter_; }
 
   bool empty( void ) const { return actions.empty(); }
   size_t size( void ) const { return actions.size(); }

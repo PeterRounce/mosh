@@ -53,7 +53,9 @@ TransportSender<MyState>::TransportSender( Connection* s_connection, MyState& in
     assumed_receiver_state( sent_states.begin() ), fragmenter(), next_ack_time( timestamp() ),
     next_send_time( timestamp() ), verbose( 0 ), shutdown_in_progress( false ), shutdown_tries( 0 ),
     shutdown_start( -1 ), ack_num( 0 ), pending_data_ack( false ), SEND_MINDELAY( 8 ), last_heard( 0 ), prng(),
-    mindelay_clock( -1 )
+    mindelay_clock( -1 ), cached_diff_(), last_local_generation_( 0 ), last_assumed_receiver_num_( 0 ),
+    cached_resend_diff_(), resend_base_num_( 0 ), resend_local_generation_( 0 ), diff_buffer_(),
+    resend_diff_buffer_()
 {}
 
 /* Try to send roughly two frames per RTT, bounded by limits on frame rate */
@@ -151,7 +153,20 @@ void TransportSender<MyState>::tick( void )
 
   /* Determine if a new diff or empty ack needs to be sent */
 
-  std::string diff = current_state.diff_from( assumed_receiver_state->state );
+  uint64_t current_gen = current_state.get_fb_generation();
+  uint64_t current_assumed_num = assumed_receiver_state->num;
+
+  std::string diff;
+  if ( current_gen == last_local_generation_
+       && current_assumed_num == last_assumed_receiver_num_
+       && !cached_diff_.empty() ) {
+    diff = cached_diff_;
+  } else {
+    diff = current_state.diff_from( assumed_receiver_state->state );
+    cached_diff_ = diff;
+    last_local_generation_ = current_gen;
+    last_assumed_receiver_num_ = current_assumed_num;
+  }
 
   attempt_prospective_resend_optimization( diff );
 
@@ -370,6 +385,10 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
     }
   }
   assert( !sent_states.empty() );
+
+  /* Invalidate diff caches — acknowledged state changed */
+  cached_diff_.clear();
+  cached_resend_diff_.clear();
 }
 
 /* give up on getting acknowledgement for shutdown */
@@ -403,7 +422,20 @@ void TransportSender<MyState>::attempt_prospective_resend_optimization( std::str
     return;
   }
 
-  std::string resend_diff = current_state.diff_from( sent_states.front().state );
+  uint64_t resend_gen = current_state.get_fb_generation();
+  uint64_t front_num = sent_states.front().num;
+
+  std::string resend_diff;
+  if ( resend_gen == resend_local_generation_
+       && front_num == resend_base_num_
+       && !cached_resend_diff_.empty() ) {
+    resend_diff = cached_resend_diff_;
+  } else {
+    resend_diff = current_state.diff_from( sent_states.front().state );
+    cached_resend_diff_ = resend_diff;
+    resend_local_generation_ = resend_gen;
+    resend_base_num_ = front_num;
+  }
 
   /* We do a prophylactic resend if it would make the diff shorter,
      or if it would lengthen it by no more than 100 bytes and still be

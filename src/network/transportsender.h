@@ -107,6 +107,19 @@ private:
 
   uint64_t mindelay_clock; /* time of first pending change to current state */
 
+  /* Diff caching */
+  std::string cached_diff_;
+  uint64_t last_local_generation_;
+  uint64_t last_assumed_receiver_num_;
+
+  std::string cached_resend_diff_;
+  uint64_t resend_base_num_;
+  uint64_t resend_local_generation_;
+
+  /* Pre-allocated diff output buffers */
+  std::string diff_buffer_;
+  std::string resend_diff_buffer_;
+
 public:
   /* constructor */
   TransportSender( Connection* s_connection, MyState& initial_state );
