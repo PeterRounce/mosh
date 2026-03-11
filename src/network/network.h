@@ -193,6 +193,12 @@ private:
   double SRTT;
   double RTTVAR;
 
+  uint64_t last_recv_timestamp_;
+  int reconnection_samples_;
+  static constexpr uint64_t RECONNECTION_GAP_MS = 3000;
+  static constexpr double RECONNECTION_ALPHA = 0.5;
+  static constexpr int RECONNECTION_FAST_SAMPLES = 4;
+
   /* Error from send()/sendto(). */
   std::string send_error;
 
@@ -232,6 +238,8 @@ public:
 
   uint64_t timeout( void ) const;
   double get_SRTT( void ) const { return SRTT; }
+
+  bool check_reconnection( void ); /* returns true if reconnection detected */
 
   const Addr& get_remote_addr( void ) const { return remote_addr; }
   socklen_t get_remote_addr_len( void ) const { return remote_addr_len; }

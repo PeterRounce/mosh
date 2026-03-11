@@ -386,6 +386,14 @@ void TransportSender<MyState>::send_in_fragments( const std::string& diff, uint6
 template<class MyState>
 void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num )
 {
+  /* Check for reconnection (gap > 3s since last received packet) */
+  if ( connection->check_reconnection() ) {
+    burst_until_ = Network::timestamp() + BURST_DURATION;
+    assumed_receiver_state = sent_states.begin();
+    cached_diff_.clear();
+    cached_resend_diff_.clear();
+  }
+
   /* Ignore ack if we have culled the state it's acknowledging */
 
   typename sent_states_type::iterator i;
