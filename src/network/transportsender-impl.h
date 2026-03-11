@@ -275,6 +275,8 @@ void TransportSender<MyState>::update_assumed_receiver_state( void )
   /* start from what is known and give benefit of the doubt to unacknowledged states
      transmitted recently enough ago */
   assumed_receiver_state = sent_states.begin();
+  cached_diff_.clear();
+  cached_resend_diff_.clear();
 
   typename std::list<TimestampedState<MyState>>::iterator i = sent_states.begin();
   i++;
@@ -375,6 +377,9 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
   }
 
   if ( i != sent_states.end() ) {
+    /* Save the old front num before erasing */
+    uint64_t old_front_num = sent_states.front().num;
+
     for ( i = sent_states.begin(); i != sent_states.end(); ) {
       typename sent_states_type::iterator i_next = i;
       i_next++;
@@ -383,12 +388,14 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
       }
       i = i_next;
     }
+
+    /* Only invalidate caches if the front actually changed */
+    if ( sent_states.front().num != old_front_num ) {
+      cached_diff_.clear();
+      cached_resend_diff_.clear();
+    }
   }
   assert( !sent_states.empty() );
-
-  /* Invalidate diff caches — acknowledged state changed */
-  cached_diff_.clear();
-  cached_resend_diff_.clear();
 }
 
 /* give up on getting acknowledgement for shutdown */
