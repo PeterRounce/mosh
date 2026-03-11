@@ -103,7 +103,7 @@ private:
 
   /* chaff to disguise instruction length */
   PRNG prng;
-  const std::string make_chaff( void );
+  void make_chaff( char* chaff_buf, size_t& chaff_len );
 
   uint64_t mindelay_clock; /* time of first pending change to current state */
 

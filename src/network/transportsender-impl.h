@@ -292,14 +292,13 @@ void TransportSender<MyState>::rationalize_states( void )
 }
 
 template<class MyState>
-const std::string TransportSender<MyState>::make_chaff( void )
+void TransportSender<MyState>::make_chaff( char* chaff_buf, size_t& chaff_len )
 {
-  const size_t CHAFF_MAX = 16;
-  const size_t chaff_len = prng.uint8() % ( CHAFF_MAX + 1 );
-
-  char chaff[CHAFF_MAX];
-  prng.fill( chaff, chaff_len );
-  return std::string( chaff, chaff_len );
+  uint32_t chaff_val = prng.uint32();
+  chaff_len = chaff_val % 16;
+  if ( chaff_len > 0 ) {
+    prng.fill( chaff_buf, chaff_len );
+  }
 }
 
 template<class MyState>
@@ -313,7 +312,10 @@ void TransportSender<MyState>::send_in_fragments( const std::string& diff, uint6
   inst.set_ack_num( ack_num );
   inst.set_throwaway_num( sent_states.front().num );
   inst.set_diff( diff );
-  inst.set_chaff( make_chaff() );
+  char chaff_buf[16];
+  size_t chaff_len;
+  make_chaff( chaff_buf, chaff_len );
+  inst.set_chaff( std::string( chaff_buf, chaff_len ) );
 
   if ( new_num == uint64_t( -1 ) ) {
     shutdown_tries++;
