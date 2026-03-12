@@ -30,14 +30,10 @@
     also delete it here.
 */
 
-/* Test suite for the OCB-AES reference implementation included with Mosh.
-
-   This tests cryptographic primitives implemented by others.  It uses the
-   same interfaces and indeed the same compiled object code as the Mosh
-   client and server.  It does not particularly test any code written for
-   the Mosh project. */
+/* Test suite for the base64 encode/decode and Base64Key class. */
 
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -46,17 +42,12 @@
 #include "src/crypto/crypto.h"
 #include "src/crypto/prng.h"
 #include "src/util/fatal_assert.h"
-// #include "test_utils.h"
-
-#define KEY_LEN 16
-#define NONCE_LEN 12
-#define TAG_LEN 16
 
 bool verbose = false;
 
-static void test_base64( void )
+static void test_base64_16byte_vectors( void )
 {
-  /* run through a test vector */
+  /* run through a test vector (16-byte values) */
   char encoded[25];
   uint8_t decoded[16];
   size_t b64_len = 24;
@@ -66,64 +57,101 @@ static void test_base64( void )
     memset( decoded, '\0', sizeof decoded );
 
     base64_encode( static_cast<const uint8_t*>( row->native ), raw_len, encoded, b64_len );
-    fatal_assert( b64_len == 24 );
-    fatal_assert( !memcmp( row->encoded, encoded, sizeof encoded ) );
+    fatal_assert( !memcmp( row->encoded, encoded, b64_len ) );
 
-    fatal_assert( base64_decode( row->encoded, b64_len, decoded, &raw_len ) );
-    fatal_assert( raw_len == 16 );
+    size_t dec_len = 16;
+    fatal_assert( base64_decode( row->encoded, b64_len, decoded, &dec_len ) );
+    fatal_assert( dec_len == 16 );
     fatal_assert( !memcmp( row->native, decoded, sizeof decoded ) );
   }
   if ( verbose ) {
-    printf( "validation PASSED\n" );
+    printf( "16-byte validation PASSED\n" );
   }
+}
+
+static void test_base64_16byte_last_byte( void )
+{
   /* try 0..255 in the last byte; make sure the final two characters are output properly */
   uint8_t source[16];
+  char encoded[25];
+  uint8_t decoded[16];
+  size_t b64_len = 24;
+  size_t raw_len = 16;
+
   memset( source, '\0', sizeof source );
   for ( int i = 0; i < 256; i++ ) {
     source[15] = i;
     base64_encode( source, raw_len, encoded, b64_len );
-    fatal_assert( b64_len == 24 );
 
-    fatal_assert( base64_decode( encoded, b64_len, decoded, &raw_len ) );
-    fatal_assert( raw_len == 16 );
+    size_t dec_len = 16;
+    fatal_assert( base64_decode( encoded, b64_len, decoded, &dec_len ) );
+    fatal_assert( dec_len == 16 );
     fatal_assert( !memcmp( source, decoded, sizeof decoded ) );
   }
   if ( verbose ) {
-    printf( "last-byte PASSED\n" );
+    printf( "16-byte last-byte PASSED\n" );
   }
+}
 
-  /* randomly try keys */
+static void test_base64_32byte_roundtrip( void )
+{
+  /* Test 32-byte (256-bit key) base64 encoding/decoding */
+  PRNG prng;
+
+  for ( int trial = 0; trial < 1024; trial++ ) {
+    uint8_t source[32];
+    prng.fill( source, sizeof source );
+
+    char encoded[45]; /* 44 chars + null */
+    memset( encoded, '\0', sizeof encoded );
+    base64_encode( source, 32, encoded, 44 );
+
+    uint8_t decoded[32];
+    size_t dec_len = 32;
+    fatal_assert( base64_decode( encoded, 44, decoded, &dec_len ) );
+    fatal_assert( dec_len == 32 );
+    fatal_assert( !memcmp( source, decoded, 32 ) );
+  }
+  if ( verbose ) {
+    printf( "32-byte roundtrip PASSED\n" );
+  }
+}
+
+static void test_base64_key_roundtrip( void )
+{
+  /* randomly try keys (32-byte Base64Key) */
   PRNG prng;
   for ( int i = 0; i < ( 1 << 17 ); i++ ) {
     Base64Key key1( prng );
     Base64Key key2( key1.printable_key() );
-    fatal_assert( key1.printable_key() == key2.printable_key() && !memcmp( key1.data(), key2.data(), 16 ) );
+    fatal_assert( key1.printable_key() == key2.printable_key()
+                  && !memcmp( key1.data(), key2.data(), Base64Key::KEY_LEN ) );
   }
   if ( verbose ) {
-    printf( "random PASSED\n" );
+    printf( "Base64Key random PASSED\n" );
   }
+}
 
-  /* test bad keys */
+static void test_bad_keys( void )
+{
+  /* test bad keys for Base64Key (43-char printable form for 32 bytes) */
   const char* bad_keys[] = {
     "",
     "AAAAAAAAAAAAAAAAAAAAAA",
-    "AAAAAAAAAAAAAAAAAAAAAA=",
-    "AAAAAAAAAAAAAAAAAAAAA==",
-    "AAAAAAAAAAAAAAAAAAAAAAA==",
-    "AAAAAAAAAAAAAAAAAAAAAAAA==",
-    "AAAAAAAAAAAAAAAAAAAAAA~=",
-    "AAAAAAAAAAAAAAAAAAAAAA=~",
-    "~AAAAAAAAAAAAAAAAAAAAA==",
-    "AAAAAAAAAAAAAAAAAAAA~A==",
-    "AAAAAAAAAAAAAAAAAAAAA~==",
-    "AAAAAAAAAA~AAAAAAAAAAA==",
-    "AAAAAAAAAA==",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "AAAAAAAAAAAAAAAAAAAAA~AAAAAAAAAAAAAAAAAAAAA",
     NULL,
   };
   for ( const char** key = bad_keys; *key != NULL; key++ ) {
-    b64_len = 24;
-    raw_len = 16;
-    fatal_assert( !base64_decode( *key, b64_len, decoded, &raw_len ) );
+    bool got_exn = false;
+    try {
+      Crypto::Base64Key k { std::string( *key ) };
+    } catch ( const Crypto::CryptoException& ) {
+      got_exn = true;
+    }
+    fatal_assert( got_exn );
   }
   if ( verbose ) {
     printf( "bad-keys PASSED\n" );
@@ -137,7 +165,11 @@ int main( int argc, char* argv[] )
   }
 
   try {
-    test_base64();
+    test_base64_16byte_vectors();
+    test_base64_16byte_last_byte();
+    test_base64_32byte_roundtrip();
+    test_base64_key_roundtrip();
+    test_bad_keys();
   } catch ( const std::exception& e ) {
     fprintf( stderr, "Error: %s\r\n", e.what() );
     return 1;

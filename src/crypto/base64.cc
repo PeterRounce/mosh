@@ -67,54 +67,106 @@ static unsigned char base64_char_to_sixbit( unsigned char c )
 
 bool base64_decode( const char* b64, const size_t b64_len, uint8_t* raw, size_t* raw_len )
 {
-  fatal_assert( b64_len == 24 ); /* only useful for Mosh keys */
-  fatal_assert( *raw_len == 16 );
-
-  uint32_t bytes = 0;
-  for ( int i = 0; i < 22; i++ ) {
-    unsigned char sixbit = base64_char_to_sixbit( *( b64++ ) );
-    if ( sixbit > 0x3f ) {
-      return false;
-    }
-    bytes <<= 6;
-    bytes |= sixbit;
-    /* write groups of 3 */
-    if ( i % 4 == 3 ) {
-      raw[0] = bytes >> 16;
-      raw[1] = bytes >> 8;
-      raw[2] = bytes;
-      raw += 3;
-      bytes = 0;
-    }
-  }
-  /* last byte of output */
-  *raw = bytes >> 4;
-  if ( b64[0] != '=' || b64[1] != '=' ) {
+  /* b64_len must be a multiple of 4 */
+  if ( b64_len % 4 != 0 || b64_len == 0 ) {
     return false;
   }
+
+  /* Count padding */
+  size_t pad = 0;
+  if ( b64[b64_len - 1] == '=' ) {
+    pad++;
+  }
+  if ( b64_len >= 2 && b64[b64_len - 2] == '=' ) {
+    pad++;
+  }
+
+  size_t expected_raw_len = ( b64_len / 4 ) * 3 - pad;
+  if ( *raw_len < expected_raw_len ) {
+    return false;
+  }
+  *raw_len = expected_raw_len;
+
+  size_t data_chars = b64_len - pad;
+  size_t full_groups = data_chars / 4;
+  size_t remaining = data_chars % 4;
+
+  const char* src = b64;
+  uint8_t* dst = raw;
+
+  /* Process full groups of 4 chars -> 3 bytes */
+  for ( size_t i = 0; i < full_groups; i++ ) {
+    unsigned char a = base64_char_to_sixbit( src[0] );
+    unsigned char b = base64_char_to_sixbit( src[1] );
+    unsigned char c = base64_char_to_sixbit( src[2] );
+    unsigned char d = base64_char_to_sixbit( src[3] );
+    if ( a > 0x3f || b > 0x3f || c > 0x3f || d > 0x3f ) {
+      return false;
+    }
+    dst[0] = ( a << 2 ) | ( b >> 4 );
+    dst[1] = ( b << 4 ) | ( c >> 2 );
+    dst[2] = ( c << 6 ) | d;
+    src += 4;
+    dst += 3;
+  }
+
+  /* Process remaining chars (partial group before padding) */
+  if ( remaining == 3 ) {
+    /* 3 data chars + 1 pad = 2 bytes */
+    unsigned char a = base64_char_to_sixbit( src[0] );
+    unsigned char b = base64_char_to_sixbit( src[1] );
+    unsigned char c = base64_char_to_sixbit( src[2] );
+    if ( a > 0x3f || b > 0x3f || c > 0x3f ) {
+      return false;
+    }
+    dst[0] = ( a << 2 ) | ( b >> 4 );
+    dst[1] = ( b << 4 ) | ( c >> 2 );
+  } else if ( remaining == 2 ) {
+    /* 2 data chars + 2 pad = 1 byte */
+    unsigned char a = base64_char_to_sixbit( src[0] );
+    unsigned char b = base64_char_to_sixbit( src[1] );
+    if ( a > 0x3f || b > 0x3f ) {
+      return false;
+    }
+    dst[0] = ( a << 2 ) | ( b >> 4 );
+  }
+
   return true;
 }
 
 void base64_encode( const uint8_t* raw, const size_t raw_len, char* b64, const size_t b64_len )
 {
-  fatal_assert( b64_len == 24 ); /* only useful for Mosh keys */
-  fatal_assert( raw_len == 16 );
+  size_t expected_b64_len = ( ( raw_len + 2 ) / 3 ) * 4;
+  fatal_assert( b64_len >= expected_b64_len );
 
-  /* first 15 bytes of input */
-  for ( int i = 0; i < 5; i++ ) {
-    uint32_t bytes = ( raw[0] << 16 ) | ( raw[1] << 8 ) | raw[2];
-    b64[0] = table[( bytes >> 18 ) & 0x3f];
-    b64[1] = table[( bytes >> 12 ) & 0x3f];
-    b64[2] = table[( bytes >> 6 ) & 0x3f];
-    b64[3] = table[(bytes)&0x3f];
-    raw += 3;
-    b64 += 4;
+  const uint8_t* src = raw;
+  char* dst = b64;
+  size_t full_groups = raw_len / 3;
+  size_t remaining = raw_len % 3;
+
+  /* Process full groups of 3 bytes -> 4 chars */
+  for ( size_t i = 0; i < full_groups; i++ ) {
+    uint32_t bytes = ( (uint32_t)src[0] << 16 ) | ( (uint32_t)src[1] << 8 ) | (uint32_t)src[2];
+    dst[0] = table[( bytes >> 18 ) & 0x3f];
+    dst[1] = table[( bytes >> 12 ) & 0x3f];
+    dst[2] = table[( bytes >> 6 ) & 0x3f];
+    dst[3] = table[bytes & 0x3f];
+    src += 3;
+    dst += 4;
   }
 
-  /* last byte of input, last 4 of output */
-  uint8_t lastchar = *raw;
-  b64[0] = table[( lastchar >> 2 ) & 0x3f];
-  b64[1] = table[( lastchar << 4 ) & 0x3f];
-  b64[2] = '=';
-  b64[3] = '=';
+  /* Process remaining bytes */
+  if ( remaining == 2 ) {
+    uint32_t bytes = ( (uint32_t)src[0] << 16 ) | ( (uint32_t)src[1] << 8 );
+    dst[0] = table[( bytes >> 18 ) & 0x3f];
+    dst[1] = table[( bytes >> 12 ) & 0x3f];
+    dst[2] = table[( bytes >> 6 ) & 0x3f];
+    dst[3] = '=';
+  } else if ( remaining == 1 ) {
+    uint32_t bytes = (uint32_t)src[0] << 16;
+    dst[0] = table[( bytes >> 18 ) & 0x3f];
+    dst[1] = table[( bytes >> 12 ) & 0x3f];
+    dst[2] = '=';
+    dst[3] = '=';
+  }
 }

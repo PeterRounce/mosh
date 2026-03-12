@@ -182,15 +182,15 @@ void Connection::setup( void )
   last_port_choice = timestamp();
 }
 
-const std::vector<int> Connection::fds( void ) const
+const std::vector<int>& Connection::fds( void ) const
 {
-  std::vector<int> ret;
+  cached_fds_.clear();
 
   for ( std::deque<Socket>::const_iterator it = socks.begin(); it != socks.end(); it++ ) {
-    ret.push_back( it->fd() );
+    cached_fds_.push_back( it->fd() );
   }
 
-  return ret;
+  return cached_fds_;
 }
 
 void Connection::set_MTU( int family )
@@ -231,7 +231,8 @@ Connection::Connection( const char* desired_ip, const char* desired_port ) /* se
   : socks(), has_remote_addr( false ), remote_addr(), remote_addr_len( 0 ), server( true ), MTU( DEFAULT_SEND_MTU ),
     key(), session( key ), direction( TO_CLIENT ), saved_timestamp( -1 ), saved_timestamp_received_at( 0 ),
     expected_receiver_seq( 0 ), last_heard( -1 ), last_port_choice( -1 ), last_roundtrip_success( -1 ),
-    RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ), send_error()
+    RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ), last_recv_timestamp_( 0 ), reconnection_samples_( 0 ),
+    send_error(), cached_fds_()
 {
   setup();
 
@@ -342,7 +343,8 @@ Connection::Connection( const char* key_str, const char* ip, const char* port ) 
   : socks(), has_remote_addr( false ), remote_addr(), remote_addr_len( 0 ), server( false ),
     MTU( DEFAULT_SEND_MTU ), key( key_str ), session( key ), direction( TO_SERVER ), saved_timestamp( -1 ),
     saved_timestamp_received_at( 0 ), expected_receiver_seq( 0 ), last_heard( -1 ), last_port_choice( -1 ),
-    last_roundtrip_success( -1 ), RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ), send_error()
+    last_roundtrip_success( -1 ), RTT_hit( false ), SRTT( 1000 ), RTTVAR( 500 ),
+    last_recv_timestamp_( 0 ), reconnection_samples_( 0 ), send_error(), cached_fds_()
 {
   setup();
 
@@ -509,9 +511,11 @@ std::string Connection::recv_one( int sock_to_recv )
         SRTT = R;
         RTTVAR = R / 2;
         RTT_hit = true;
+        reconnection_samples_++;
       } else {
-        const double alpha = 1.0 / 8.0;
+        double alpha = ( reconnection_samples_ < RECONNECTION_FAST_SAMPLES ) ? RECONNECTION_ALPHA : 1.0 / 8.0;
         const double beta = 1.0 / 4.0;
+        reconnection_samples_++;
 
         RTTVAR = ( 1 - beta ) * RTTVAR + ( beta * fabs( SRTT - R ) );
         SRTT = ( 1 - alpha ) * SRTT + ( alpha * R );
@@ -587,6 +591,20 @@ uint16_t Network::timestamp_diff( uint16_t tsnew, uint16_t tsold )
   assert( diff <= 65535 );
 
   return diff;
+}
+
+bool Connection::check_reconnection( void )
+{
+  uint64_t now = timestamp();
+  bool reconnected = false;
+  if ( last_recv_timestamp_ > 0 && ( now - last_recv_timestamp_ ) > RECONNECTION_GAP_MS ) {
+    SRTT = 1000;
+    RTTVAR = 500;
+    reconnection_samples_ = 0;
+    reconnected = true;
+  }
+  last_recv_timestamp_ = now;
+  return reconnected;
 }
 
 uint64_t Connection::timeout( void ) const

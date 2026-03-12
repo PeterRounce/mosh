@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mosh (Mobile Shell) is a remote terminal application supporting intermittent connectivity, client roaming, and speculative local echo over UDP. It uses SSH for authentication/setup, then communicates via encrypted UDP (AES-128-OCB) on ports 60000-61000.
+Mosh (Mobile Shell) is a remote terminal application supporting intermittent connectivity, client roaming, and speculative local echo over UDP. It uses SSH for authentication/setup, then communicates via encrypted UDP (XChaCha20-Poly1305) on ports 60000-61000.
 
 ## Build Commands
 
 Install dependencies (Debian/Ubuntu/WSL):
 ```bash
 sudo apt install -y build-essential protobuf-compiler libprotobuf-dev pkg-config \
-    libutempter-dev zlib1g-dev libncurses5-dev libssl-dev bash-completion tmux less
+    libutempter-dev libzstd-dev libxxhash-dev libsodium-dev libncurses5-dev \
+    bash-completion tmux less
 ```
 
 Build and test:
@@ -25,10 +26,10 @@ make check                    # Run all tests (best without -j on loaded machine
 Run a single test:
 ```bash
 cd src/tests && ./emulation-scroll.test          # Run one e2e test
-cd src/tests && ./ocb-aes                        # Run one unit test binary
+cd src/tests && ./crypto-test                    # Run one unit test binary
 ```
 
-Useful configure flags: `--enable-compile-warnings=error`, `--enable-examples`, `--enable-code-coverage`, `--with-crypto-library={openssl,nettle,apple-common-crypto}`.
+Useful configure flags: `--enable-compile-warnings=error`, `--enable-examples`, `--enable-code-coverage`.
 
 Static analysis: `make cppcheck`, `make scan-build` (clang), `make cov-build` (Coverity).
 
@@ -51,7 +52,7 @@ The system is a client-server model communicating over encrypted UDP with state 
 mosh-client (local)                    mosh-server (remote)
 ┌─────────────────────┐                ┌─────────────────────┐
 │ STMClient           │                │ mosh-server.cc      │
-│  └─TerminalOverlay  │◄──UDP/OCB────►│  └─PTY management   │
+│  └─TerminalOverlay  │◄──UDP/XCP───►│  └─PTY management   │
 │     (prediction UI) │  (Network::   │    └─Shell process   │
 │                     │   Transport)  │                     │
 └─────────────────────┘                └─────────────────────┘
@@ -59,13 +60,13 @@ mosh-client (local)                    mosh-server (remote)
 
 **Key layers (bottom-up):**
 
-1. **crypto/** — AES-128-OCB authenticated encryption with pluggable backends (OpenSSL, Nettle, Apple CommonCrypto). `Crypto::Session` manages nonces and ciphertexts.
+1. **crypto/** — XChaCha20-Poly1305 authenticated encryption via libsodium. `Crypto::Session` manages nonces and ciphertexts. Keys are locked in memory with `sodium_mlock()`.
 
-2. **network/** — UDP transport with encryption. `Network::Connection` handles sockets. `Network::Transport<MyState, RemoteState>` is a templated state-synchronization transport. `TransportSender` manages outgoing reliability and flow control. `transportfragment` handles packet fragmentation.
+2. **network/** — UDP transport with encryption. `Network::Connection` handles sockets with `epoll_pwait()` on Linux. `Network::Transport<MyState, RemoteState>` is a templated state-synchronization transport. `TransportSender` manages outgoing reliability with diff caching, adaptive timing, and burst mode for reconnection. `transportfragment` handles packet fragmentation. Compression uses zstd (level 1).
 
-3. **terminal/** — Full VT100/ANSI terminal emulator. `Parser::UTF8Parser` → `Terminal::Emulator` → `Terminal::Framebuffer` (2D cell grid). `Terminal::Display` formats output.
+3. **terminal/** — Full VT100/ANSI terminal emulator. `Parser::UTF8Parser` → `Terminal::Emulator` → `Terminal::Framebuffer` (2D cell grid with generation counter). `Terminal::Display` formats output with XXH3-based O(n) scroll detection. `Row` objects maintain lazy XXH3 hashes for efficient comparison.
 
-4. **statesync/** — Bridges terminal and network. `Terminal::Complete` wraps the full terminal state and implements `diff_from()`/`apply_string()` for minimal state diffs over the wire.
+4. **statesync/** — Bridges terminal and network. `Terminal::Complete` wraps the full terminal state and implements `diff_from()`/`apply_string()` for minimal state diffs over the wire. Supports priority-based diff levels for reconnection resync.
 
 5. **frontend/** — Application layer. `STMClient` (client state machine with prediction/local echo) and `mosh-server.cc` (PTY management, adaptive frame rate). `TerminalOverlay` renders prediction UI.
 
@@ -78,7 +79,7 @@ Tests use a bash/tmux-based e2e framework (`src/tests/e2e-test`). Tests compare 
 - `same`/`different` modes: compare baseline vs variant
 - `post` mode: custom verification script
 
-Unit tests exist for crypto (`ocb-aes`, `encrypt-decrypt`, `base64`, `nonce-incr`).
+Unit tests exist for crypto (`crypto-test`, `encrypt-decrypt`, `base64`, `nonce-incr`), compression (`compressor`), framebuffer (`framebuffer-gen`), and row hashing (`row-hash`).
 
 Expected failures (XFAIL): `e2e-failure.test`, `emulation-attributes-256color8.test`.
 
@@ -86,4 +87,4 @@ E2e test logs go to `<testname>.test.d/` with `<action>.exitstatus`, `<action>.t
 
 ## Security Considerations
 
-Hardening is enabled by default (`--enable-hardening`): stack protector, FORTIFY_SOURCE, PIE, RELRO. No privileged code runs — utmp updates go through libutempter. Session keys must never be exposed via process environment.
+Hardening is enabled by default (`--enable-hardening`): stack protector, FORTIFY_SOURCE, PIE, RELRO. No privileged code runs — utmp updates go through libutempter. Session keys are locked with `sodium_mlock()` and zeroed with `sodium_memzero()` on destruction. Keys must never be exposed via process environment.

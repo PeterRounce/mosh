@@ -47,11 +47,6 @@ void hexdump( const void* buf, size_t len, const char* name )
   printf( "\n" );
 }
 
-void hexdump( const Crypto::AlignedBuffer& buf, const char* name )
-{
-  hexdump( buf.data(), buf.len(), name );
-}
-
 void hexdump( const std::string& buf, const char* name )
 {
   hexdump( buf.data(), buf.size(), name );

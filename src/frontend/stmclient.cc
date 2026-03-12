@@ -461,7 +461,7 @@ bool STMClient::main( void )
       /* poll for events */
       /* network->fd() can in theory change over time */
       sel.clear_fds();
-      std::vector<int> fd_list( network->fds() );
+      const std::vector<int>& fd_list( network->fds() );
       for ( std::vector<int>::const_iterator it = fd_list.begin(); it != fd_list.end(); it++ ) {
         sel.add_fd( *it );
       }

@@ -53,16 +53,36 @@ TransportSender<MyState>::TransportSender( Connection* s_connection, MyState& in
     assumed_receiver_state( sent_states.begin() ), fragmenter(), next_ack_time( timestamp() ),
     next_send_time( timestamp() ), verbose( 0 ), shutdown_in_progress( false ), shutdown_tries( 0 ),
     shutdown_start( -1 ), ack_num( 0 ), pending_data_ack( false ), SEND_MINDELAY( 8 ), last_heard( 0 ), prng(),
-    mindelay_clock( -1 )
+    mindelay_clock( -1 ), cached_diff_(), last_local_generation_( 0 ), last_assumed_receiver_num_( 0 ),
+    cached_resend_diff_(), resend_base_num_( 0 ), resend_local_generation_( 0 ), diff_buffer_(),
+    resend_diff_buffer_(), burst_until_( 0 ), reconnecting_( false ), reconnection_priority_( 0 )
 {}
+
+/* Returns adaptive minimum send interval based on SRTT */
+template<class MyState>
+int TransportSender<MyState>::adaptive_send_interval_min( void ) const
+{
+  double srtt = connection->get_SRTT();
+  if ( srtt < 10.0 ) {
+    return 8;  /* LAN: ~125fps */
+  } else if ( srtt < 50.0 ) {
+    return 15; /* Regional: ~67fps */
+  } else {
+    return 20; /* WAN: ~50fps */
+  }
+}
 
 /* Try to send roughly two frames per RTT, bounded by limits on frame rate */
 template<class MyState>
 unsigned int TransportSender<MyState>::send_interval( void ) const
 {
+  if ( burst_until_ > 0 && Network::timestamp() < burst_until_ ) {
+    return BURST_INTERVAL;
+  }
+
   int SEND_INTERVAL = lrint( ceil( connection->get_SRTT() / 2.0 ) );
-  if ( SEND_INTERVAL < SEND_INTERVAL_MIN ) {
-    SEND_INTERVAL = SEND_INTERVAL_MIN;
+  if ( SEND_INTERVAL < adaptive_send_interval_min() ) {
+    SEND_INTERVAL = adaptive_send_interval_min();
   } else if ( SEND_INTERVAL > SEND_INTERVAL_MAX ) {
     SEND_INTERVAL = SEND_INTERVAL_MAX;
   }
@@ -151,26 +171,49 @@ void TransportSender<MyState>::tick( void )
 
   /* Determine if a new diff or empty ack needs to be sent */
 
-  std::string diff = current_state.diff_from( assumed_receiver_state->state );
+  uint64_t current_gen = current_state.get_fb_generation();
+  uint64_t current_assumed_num = assumed_receiver_state->num;
 
-  attempt_prospective_resend_optimization( diff );
+  if ( reconnecting_ ) {
+    current_state.diff_from_priority( assumed_receiver_state->state, &diff_buffer_, reconnection_priority_ );
+    if ( reconnection_priority_ < 2 ) {
+      reconnection_priority_++;
+    } else {
+      reconnecting_ = false;
+    }
+    /* Invalidate cache since priority diff is not cacheable */
+    cached_diff_.clear();
+  } else if ( current_gen == last_local_generation_
+              && current_assumed_num == last_assumed_receiver_num_
+              && !cached_diff_.empty() ) {
+    diff_buffer_ = cached_diff_;
+  } else {
+    current_state.diff_from( assumed_receiver_state->state, &diff_buffer_ );
+    cached_diff_ = diff_buffer_;
+    last_local_generation_ = current_gen;
+    last_assumed_receiver_num_ = current_assumed_num;
+  }
+
+  attempt_prospective_resend_optimization( diff_buffer_ );
 
   if ( verbose ) {
     /* verify diff has round-trip identity (modulo Unicode fallback rendering) */
     MyState newstate( assumed_receiver_state->state );
-    newstate.apply_string( diff );
+    newstate.apply_string( diff_buffer_ );
     if ( current_state.compare( newstate ) ) {
       fprintf( stderr, "Warning, round-trip Instruction verification failed!\n" );
     }
     /* Also verify that both the original frame and generated frame have the same initial diff. */
-    std::string current_diff( current_state.init_diff() );
-    std::string new_diff( newstate.init_diff() );
+    std::string current_diff;
+    current_state.init_diff( &current_diff );
+    std::string new_diff;
+    newstate.init_diff( &new_diff );
     if ( current_diff != new_diff ) {
       fprintf( stderr, "Warning, target state Instruction verification failed!\n" );
     }
   }
 
-  if ( diff.empty() ) {
+  if ( diff_buffer_.empty() ) {
     if ( ( now >= next_ack_time ) ) {
       send_empty_ack();
       mindelay_clock = uint64_t( -1 );
@@ -181,7 +224,7 @@ void TransportSender<MyState>::tick( void )
     }
   } else if ( ( now >= next_send_time ) || ( now >= next_ack_time ) ) {
     /* Send diffs or ack */
-    send_to_receiver( diff );
+    send_to_receiver( diff_buffer_ );
     mindelay_clock = uint64_t( -1 );
   }
 }
@@ -260,6 +303,8 @@ void TransportSender<MyState>::update_assumed_receiver_state( void )
   /* start from what is known and give benefit of the doubt to unacknowledged states
      transmitted recently enough ago */
   assumed_receiver_state = sent_states.begin();
+  cached_diff_.clear();
+  cached_resend_diff_.clear();
 
   typename std::list<TimestampedState<MyState>>::iterator i = sent_states.begin();
   i++;
@@ -292,14 +337,13 @@ void TransportSender<MyState>::rationalize_states( void )
 }
 
 template<class MyState>
-const std::string TransportSender<MyState>::make_chaff( void )
+void TransportSender<MyState>::make_chaff( char* chaff_buf, size_t& chaff_len )
 {
-  const size_t CHAFF_MAX = 16;
-  const size_t chaff_len = prng.uint8() % ( CHAFF_MAX + 1 );
-
-  char chaff[CHAFF_MAX];
-  prng.fill( chaff, chaff_len );
-  return std::string( chaff, chaff_len );
+  uint32_t chaff_val = prng.uint32();
+  chaff_len = chaff_val % 16;
+  if ( chaff_len > 0 ) {
+    prng.fill( chaff_buf, chaff_len );
+  }
 }
 
 template<class MyState>
@@ -313,7 +357,10 @@ void TransportSender<MyState>::send_in_fragments( const std::string& diff, uint6
   inst.set_ack_num( ack_num );
   inst.set_throwaway_num( sent_states.front().num );
   inst.set_diff( diff );
-  inst.set_chaff( make_chaff() );
+  char chaff_buf[16];
+  size_t chaff_len;
+  make_chaff( chaff_buf, chaff_len );
+  inst.set_chaff( std::string( chaff_buf, chaff_len ) );
 
   if ( new_num == uint64_t( -1 ) ) {
     shutdown_tries++;
@@ -348,6 +395,16 @@ void TransportSender<MyState>::send_in_fragments( const std::string& diff, uint6
 template<class MyState>
 void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num )
 {
+  /* Check for reconnection (gap > 3s since last received packet) */
+  if ( connection->check_reconnection() ) {
+    burst_until_ = Network::timestamp() + BURST_DURATION;
+    assumed_receiver_state = sent_states.begin();
+    cached_diff_.clear();
+    cached_resend_diff_.clear();
+    reconnecting_ = true;
+    reconnection_priority_ = 0;
+  }
+
   /* Ignore ack if we have culled the state it's acknowledging */
 
   typename sent_states_type::iterator i;
@@ -358,6 +415,9 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
   }
 
   if ( i != sent_states.end() ) {
+    /* Save the old front num before erasing */
+    uint64_t old_front_num = sent_states.front().num;
+
     for ( i = sent_states.begin(); i != sent_states.end(); ) {
       typename sent_states_type::iterator i_next = i;
       i_next++;
@@ -365,6 +425,12 @@ void TransportSender<MyState>::process_acknowledgment_through( uint64_t ack_num 
         sent_states.erase( i );
       }
       i = i_next;
+    }
+
+    /* Only invalidate caches if the front actually changed */
+    if ( sent_states.front().num != old_front_num ) {
+      cached_diff_.clear();
+      cached_resend_diff_.clear();
     }
   }
   assert( !sent_states.empty() );
@@ -401,16 +467,29 @@ void TransportSender<MyState>::attempt_prospective_resend_optimization( std::str
     return;
   }
 
-  std::string resend_diff = current_state.diff_from( sent_states.front().state );
+  uint64_t resend_gen = current_state.get_fb_generation();
+  uint64_t front_num = sent_states.front().num;
+
+  if ( resend_gen == resend_local_generation_
+       && front_num == resend_base_num_
+       && !cached_resend_diff_.empty() ) {
+    resend_diff_buffer_ = cached_resend_diff_;
+  } else {
+    current_state.diff_from( sent_states.front().state, &resend_diff_buffer_ );
+    cached_resend_diff_ = resend_diff_buffer_;
+    resend_local_generation_ = resend_gen;
+    resend_base_num_ = front_num;
+  }
 
   /* We do a prophylactic resend if it would make the diff shorter,
      or if it would lengthen it by no more than 100 bytes and still be
      less than 1000 bytes. */
 
-  if ( ( resend_diff.size() <= proposed_diff.size() )
-       || ( ( resend_diff.size() < 1000 ) && ( resend_diff.size() - proposed_diff.size() < 100 ) ) ) {
+  if ( ( resend_diff_buffer_.size() <= proposed_diff.size() )
+       || ( ( resend_diff_buffer_.size() < 1000 )
+            && ( resend_diff_buffer_.size() - proposed_diff.size() < 100 ) ) ) {
     assumed_receiver_state = sent_states.begin();
-    proposed_diff = resend_diff;
+    proposed_diff = resend_diff_buffer_;
   }
 }
 

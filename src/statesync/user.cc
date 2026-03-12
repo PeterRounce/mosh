@@ -31,6 +31,7 @@
 */
 
 #include <cassert>
+#include <string_view>
 #include <typeinfo>
 
 #include "src/protobufs/userinput.pb.h"
@@ -56,7 +57,7 @@ void UserStream::subtract( const UserStream* prefix )
   }
 }
 
-std::string UserStream::diff_from( const UserStream& existing ) const
+void UserStream::diff_from( const UserStream& existing, std::string* out ) const
 {
   std::deque<UserEvent>::const_iterator my_it = actions.begin();
 
@@ -97,13 +98,15 @@ std::string UserStream::diff_from( const UserStream& existing ) const
     my_it++;
   }
 
-  return output.SerializeAsString();
+  size_t serial_size = output.ByteSizeLong();
+  out->resize( serial_size );
+  output.SerializeToArray( out->data(), serial_size );
 }
 
-void UserStream::apply_string( const std::string& diff )
+void UserStream::apply_string( std::string_view diff )
 {
   ClientBuffers::UserMessage input;
-  fatal_assert( input.ParseFromString( diff ) );
+  fatal_assert( input.ParseFromArray( diff.data(), diff.size() ) );
 
   for ( int i = 0; i < input.instruction_size(); i++ ) {
     if ( input.instruction( i ).HasExtension( keystroke ) ) {

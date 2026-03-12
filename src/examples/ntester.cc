@@ -79,7 +79,7 @@ int main( int argc, char* argv[] )
     while ( true ) {
       try {
         sel.clear_fds();
-        std::vector<int> fd_list( n->fds() );
+        const std::vector<int>& fd_list( n->fds() );
         assert( fd_list.size() == 1 ); /* servers don't hop */
         int network_fd = fd_list.back();
         sel.add_fd( network_fd );
@@ -127,7 +127,7 @@ int main( int argc, char* argv[] )
       sel.clear_fds();
       sel.add_fd( STDIN_FILENO );
 
-      std::vector<int> fd_list( n->fds() );
+      const std::vector<int>& fd_list( n->fds() );
       for ( std::vector<int>::const_iterator it = fd_list.begin(); it != fd_list.end(); it++ ) {
         sel.add_fd( *it );
       }

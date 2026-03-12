@@ -50,7 +50,7 @@
 using namespace Crypto;
 
 namespace Network {
-static const unsigned int MOSH_PROTOCOL_VERSION = 2; /* bumped for echo-ack */
+static const unsigned int MOSH_PROTOCOL_VERSION = 3; /* bumped for XChaCha20-Poly1305 */
 
 uint64_t timestamp( void );
 uint16_t timestamp16( void );
@@ -193,8 +193,16 @@ private:
   double SRTT;
   double RTTVAR;
 
+  uint64_t last_recv_timestamp_;
+  int reconnection_samples_;
+  static constexpr uint64_t RECONNECTION_GAP_MS = 3000;
+  static constexpr double RECONNECTION_ALPHA = 0.5;
+  static constexpr int RECONNECTION_FAST_SAMPLES = 4;
+
   /* Error from send()/sendto(). */
   std::string send_error;
+
+  mutable std::vector<int> cached_fds_;
 
   Packet new_packet( const std::string& s_payload );
 
@@ -214,14 +222,14 @@ private:
 
 public:
   /* Network transport overhead. */
-  static const int ADDED_BYTES = 8 /* seqno/nonce */ + 4 /* timestamps */;
+  static const int ADDED_BYTES = 24 /* seqno/nonce */ + 4 /* timestamps */;
 
   Connection( const char* desired_ip, const char* desired_port );      /* server */
   Connection( const char* key_str, const char* ip, const char* port ); /* client */
 
   void send( const std::string& s );
   std::string recv( void );
-  const std::vector<int> fds( void ) const;
+  const std::vector<int>& fds( void ) const;
   int get_MTU( void ) const { return MTU; }
 
   std::string port( void ) const;
@@ -230,6 +238,8 @@ public:
 
   uint64_t timeout( void ) const;
   double get_SRTT( void ) const { return SRTT; }
+
+  bool check_reconnection( void ); /* returns true if reconnection detected */
 
   const Addr& get_remote_addr( void ) const { return remote_addr; }
   socklen_t get_remote_addr_len( void ) const { return remote_addr_len; }

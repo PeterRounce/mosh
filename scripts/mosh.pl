@@ -427,7 +427,7 @@ if ( $pid == 0 ) { # child
 	die "Bad MOSH SSH_CONNECTION string: $_\n";
       }
     } elsif ( m{^MOSH CONNECT } ) {
-      if ( ( $port, $key ) = m{^MOSH CONNECT (\d+?) ([A-Za-z0-9/+]{22})\s*$} ) {
+      if ( ( $port, $key ) = m{^MOSH CONNECT (\d+?) ([A-Za-z0-9/+]{22,43})\s*$} ) {
 	last LINE;
       } else {
 	die "Bad MOSH CONNECT string: $_\n";

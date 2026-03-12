@@ -31,6 +31,7 @@
 */
 
 #include <cstdio>
+#include <unordered_map>
 
 #include "src/terminal/terminalframebuffer.h"
 #include "terminaldisplay.h"
@@ -166,30 +167,35 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
     int lines_scrolled = 0;
     int scroll_height = 0;
 
-    for ( int row = 0; row < f.ds.get_height(); row++ ) {
-      const Row* new_row = f.get_row( 0 );
-      const Row* old_row = &*rows.at( row );
-      if ( !( new_row == old_row || *new_row == *old_row ) ) {
-        continue;
-      }
-      /* if row 0, we're looking at ourselves and probably didn't scroll */
-      if ( row == 0 ) {
-        break;
-      }
-      /* found a scroll */
-      lines_scrolled = row;
-      scroll_height = 1;
+    /* Build a hash map from old row hash → row index for O(1) lookup. */
+    std::unordered_map<uint64_t, int> old_row_hashes;
+    for ( int row = 0; row < (int)rows.size(); row++ ) {
+      old_row_hashes.emplace( rows.at( row )->hash(), row );
+    }
 
-      /* how big is the region that was scrolled? */
-      for ( int region_height = 1; lines_scrolled + region_height < f.ds.get_height(); region_height++ ) {
-        if ( *f.get_row( region_height ) == *rows.at( lines_scrolled + region_height ) ) {
-          scroll_height = region_height + 1;
-        } else {
-          break;
+    /* Find which old row matches new row 0 via hash lookup instead of O(n) scan. */
+    const Row* new_row_0 = f.get_row( 0 );
+    auto it = old_row_hashes.find( new_row_0->hash() );
+    if ( it != old_row_hashes.end() ) {
+      int row = it->second;
+      const Row* old_row = &*rows.at( row );
+      if ( new_row_0 == old_row || *new_row_0 == *old_row ) {
+        /* if row 0, we're looking at ourselves and probably didn't scroll */
+        if ( row != 0 ) {
+          /* found a scroll */
+          lines_scrolled = row;
+          scroll_height = 1;
+
+          /* how big is the region that was scrolled? */
+          for ( int region_height = 1; lines_scrolled + region_height < f.ds.get_height(); region_height++ ) {
+            if ( *f.get_row( region_height ) == *rows.at( lines_scrolled + region_height ) ) {
+              scroll_height = region_height + 1;
+            } else {
+              break;
+            }
+          }
         }
       }
-
-      break;
     }
 
     if ( scroll_height ) {

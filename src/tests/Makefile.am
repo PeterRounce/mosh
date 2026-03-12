@@ -38,8 +38,8 @@ displaytests = \
 	unicode-later-combining.test \
 	window-resize.test
 
-check_PROGRAMS = ocb-aes encrypt-decrypt base64 nonce-incr inpty is-utf8-locale
-TESTS = ocb-aes encrypt-decrypt base64 nonce-incr local.test $(displaytests)
+check_PROGRAMS = crypto-test encrypt-decrypt base64 nonce-incr inpty is-utf8-locale framebuffer-gen row-hash compressor
+TESTS = crypto-test encrypt-decrypt base64 nonce-incr framebuffer-gen row-hash compressor local.test $(displaytests)
 XFAIL_TESTS = \
 	e2e-failure.test \
 	emulation-attributes-256color8.test
@@ -48,21 +48,21 @@ base64_vector.cc: $(srcdir)/genbase64.pl
 	$(AM_V_GEN)echo '#include "base64_vector.h"' > base64_vector.cc || rm base64_vector.cc
 	$(AM_V_GEN)perl $(srcdir)/genbase64.pl >> base64_vector.cc || rm base64_vector.cc
 
-ocb_aes_SOURCES = ocb-aes.cc test_utils.cc test_utils.h
-ocb_aes_CPPFLAGS = -I$(srcdir)/../crypto -I$(srcdir)/../util $(CRYPTO_CFLAGS)
-ocb_aes_LDADD = ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(CRYPTO_LIBS)
+crypto_test_SOURCES = crypto-test.cc test_utils.cc test_utils.h
+crypto_test_CPPFLAGS = -I$(srcdir)/../crypto -I$(srcdir)/../util $(SODIUM_CFLAGS)
+crypto_test_LDADD = ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(SODIUM_LIBS)
 
 encrypt_decrypt_SOURCES = encrypt-decrypt.cc test_utils.cc test_utils.h
-encrypt_decrypt_CPPFLAGS = -I$(srcdir)/../crypto -I$(srcdir)/../util
-encrypt_decrypt_LDADD = ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(CRYPTO_LIBS)
+encrypt_decrypt_CPPFLAGS = -I$(srcdir)/../crypto -I$(srcdir)/../util $(SODIUM_CFLAGS)
+encrypt_decrypt_LDADD = ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(SODIUM_LIBS)
 
 base64_SOURCES = base64.cc base64_vector.cc base64_vector.h genbase64.pl
-base64_CPPFLAGS = $(ocb_aes_CPPFLAGS)
-base64_LDADD = $(ocb_aes_LDADD)
+base64_CPPFLAGS = $(crypto_test_CPPFLAGS)
+base64_LDADD = $(crypto_test_LDADD)
 
 nonce_incr_SOURCES = nonce-incr.cc
-nonce_incr_CPPFLAGS = -I$(srcdir)/../network -I$(srcdir)/../crypto -I$(srcdir)/../util $(CRYPTO_CFLAGS)
-nonce_incr_LDADD = ../network/libmoshnetwork.a ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(CRYPTO_LIBS)
+nonce_incr_CPPFLAGS = -I$(srcdir)/../network -I$(srcdir)/../crypto -I$(srcdir)/../util $(SODIUM_CFLAGS)
+nonce_incr_LDADD = ../network/libmoshnetwork.a ../crypto/libmoshcrypto.a ../util/libmoshutil.a $(SODIUM_LIBS) $(ZSTD_LIBS)
 
 inpty_SOURCES = inpty.cc
 inpty_CPPFLAGS = -I$(srcdir)/../util
@@ -71,6 +71,18 @@ inpty_LDADD = ../util/libmoshutil.a
 is_utf8_locale_SOURCES = is-utf8-locale.cc
 is_utf8_locale_CPPFLAGS = -I$(srcdir)/../util
 is_utf8_locale_LDADD = ../util/libmoshutil.a $(LIBUTIL)
+
+framebuffer_gen_SOURCES = framebuffer-gen.cc
+framebuffer_gen_CPPFLAGS = -I$(srcdir)/../terminal -I$(srcdir)/../util $(PROTOBUF_CFLAGS)
+framebuffer_gen_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../protobufs/libmoshprotos.a $(PROTOBUF_LIBS) $(TINFO_LIBS) $(XXHASH_LIBS)
+
+row_hash_SOURCES = row-hash.cc
+row_hash_CPPFLAGS = -I$(srcdir)/../terminal -I$(srcdir)/../util $(PROTOBUF_CFLAGS) $(XXHASH_CFLAGS)
+row_hash_LDADD = ../terminal/libmoshterminal.a ../util/libmoshutil.a ../protobufs/libmoshprotos.a $(PROTOBUF_LIBS) $(TINFO_LIBS) $(XXHASH_LIBS)
+
+compressor_SOURCES = compressor.cc
+compressor_CPPFLAGS = -I$(top_srcdir)/ $(ZSTD_CFLAGS)
+compressor_LDADD = ../network/libmoshnetwork.a ../util/libmoshutil.a $(ZSTD_LIBS)
 
 clean-local: clean-local-check
 .PHONY: clean-local-check

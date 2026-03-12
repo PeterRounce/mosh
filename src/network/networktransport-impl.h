@@ -46,7 +46,8 @@ Transport<MyState, RemoteState>::Transport( MyState& initial_state,
                                             const char* desired_port )
   : connection( desired_ip, desired_port ), sender( &connection, initial_state ),
     received_states( 1, TimestampedState<RemoteState>( timestamp(), 0, initial_remote ) ),
-    receiver_quench_timer( 0 ), last_receiver_state( initial_remote ), fragments(), verbose( 0 )
+    receiver_quench_timer( 0 ), last_receiver_state( initial_remote ), fragments(), verbose( 0 ),
+    remote_diff_buffer_()
 {
   /* server */
 }
@@ -59,7 +60,8 @@ Transport<MyState, RemoteState>::Transport( MyState& initial_state,
                                             const char* port )
   : connection( key_str, ip, port ), sender( &connection, initial_state ),
     received_states( 1, TimestampedState<RemoteState>( timestamp(), 0, initial_remote ) ),
-    receiver_quench_timer( 0 ), last_receiver_state( initial_remote ), fragments(), verbose( 0 )
+    receiver_quench_timer( 0 ), last_receiver_state( initial_remote ), fragments(), verbose( 0 ),
+    remote_diff_buffer_()
 {
   /* client */
 }
@@ -74,7 +76,10 @@ void Transport<MyState, RemoteState>::recv( void )
     Instruction inst = fragments.get_assembly();
 
     if ( inst.protocol_version() != MOSH_PROTOCOL_VERSION ) {
-      throw NetworkException( "mosh protocol version mismatch", 0 );
+      throw NetworkException( "mosh protocol version mismatch: expected "
+                                + std::to_string( MOSH_PROTOCOL_VERSION ) + ", got "
+                                + std::to_string( inst.protocol_version() ),
+                              0 );
     }
 
     sender.process_acknowledgment_through( inst.ack_num() );
@@ -196,7 +201,7 @@ std::string Transport<MyState, RemoteState>::get_remote_diff( void )
 {
   /* find diff between last receiver state and current remote state, then rationalize states */
 
-  std::string ret( received_states.back().state.diff_from( last_receiver_state ) );
+  received_states.back().state.diff_from( last_receiver_state, &remote_diff_buffer_ );
 
   const RemoteState* oldest_receiver_state = &received_states.front().state;
 
@@ -208,7 +213,7 @@ std::string Transport<MyState, RemoteState>::get_remote_diff( void )
 
   last_receiver_state = received_states.back().state;
 
-  return ret;
+  return remote_diff_buffer_;
 }
 
 #endif

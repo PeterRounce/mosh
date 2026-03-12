@@ -35,6 +35,7 @@
 
 #include <cstdint>
 #include <list>
+#include <string_view>
 
 #include "src/terminal/parser.h"
 #include "src/terminal/terminal.h"
@@ -47,7 +48,7 @@ class Complete
 private:
   Parser::UTF8Parser parser;
   Terminal::Emulator terminal;
-  Terminal::Display display;
+  mutable Terminal::Display display;
 
   // Only used locally by act(), but kept here as a performance optimization,
   // to avoid construction/destruction.  It must always be empty
@@ -69,6 +70,7 @@ public:
   std::string act( const Parser::Action& act );
 
   const Framebuffer& get_fb( void ) const { return terminal.get_fb(); }
+  uint64_t get_fb_generation() const { return terminal.get_fb().generation(); }
   void reset_input( void ) { parser.reset_input(); }
   uint64_t get_echo_ack( void ) const { return echo_ack; }
   bool set_echo_ack( uint64_t now );
@@ -77,9 +79,10 @@ public:
 
   /* interface for Network::Transport */
   void subtract( const Complete* ) const {}
-  std::string diff_from( const Complete& existing ) const;
-  std::string init_diff( void ) const;
-  void apply_string( const std::string& diff );
+  void diff_from( const Complete& existing, std::string* output ) const;
+  void diff_from_priority( const Complete& existing, std::string* output, int priority_level ) const;
+  void init_diff( std::string* output ) const;
+  void apply_string( std::string_view diff );
   bool operator==( const Complete& x ) const;
 
   bool compare( const Complete& other ) const;

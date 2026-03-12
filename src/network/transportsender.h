@@ -46,10 +46,9 @@ namespace Network {
 using namespace TransportBuffers;
 
 /* timing parameters */
-constexpr int SEND_INTERVAL_MIN = 20;       /* ms between frames */
 constexpr int SEND_INTERVAL_MAX = 250;      /* ms between frames */
 constexpr int ACK_INTERVAL = 3000;          /* ms between empty acks */
-constexpr int ACK_DELAY = 100;              /* ms before delayed ack */
+constexpr int ACK_DELAY = 30;               /* ms before delayed ack */
 constexpr int SHUTDOWN_RETRIES = 16;        /* number of shutdown packets to send before giving up */
 constexpr int ACTIVE_RETRY_TIMEOUT = 10000; /* attempt to resend at frame rate */
 
@@ -103,9 +102,33 @@ private:
 
   /* chaff to disguise instruction length */
   PRNG prng;
-  const std::string make_chaff( void );
+  void make_chaff( char* chaff_buf, size_t& chaff_len );
 
   uint64_t mindelay_clock; /* time of first pending change to current state */
+
+  /* Diff caching */
+  std::string cached_diff_;
+  uint64_t last_local_generation_;
+  uint64_t last_assumed_receiver_num_;
+
+  std::string cached_resend_diff_;
+  uint64_t resend_base_num_;
+  uint64_t resend_local_generation_;
+
+  /* Pre-allocated diff output buffers */
+  std::string diff_buffer_;
+  std::string resend_diff_buffer_;
+
+  /* Burst mode for reconnection */
+  uint64_t burst_until_;
+  static constexpr int BURST_INTERVAL = 4;    /* ms during burst */
+  static constexpr int BURST_DURATION = 500;  /* ms of burst after reconnection */
+
+  /* Progressive resync after reconnection */
+  bool reconnecting_;
+  int reconnection_priority_;
+
+  int adaptive_send_interval_min( void ) const;
 
 public:
   /* constructor */

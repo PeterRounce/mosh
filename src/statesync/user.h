@@ -34,9 +34,11 @@
 #define USER_HPP
 
 #include <cassert>
+#include <cstdint>
 #include <deque>
 #include <list>
 #include <string>
+#include <string_view>
 
 #include "src/terminal/parseraction.h"
 
@@ -72,6 +74,7 @@ class UserStream
 {
 private:
   std::deque<UserEvent> actions;
+  mutable uint64_t user_gen_counter_ = 0;
 
 public:
   UserStream() : actions() {}
@@ -79,15 +82,21 @@ public:
   void push_back( const Parser::UserByte& s_userbyte ) { actions.push_back( UserEvent( s_userbyte ) ); }
   void push_back( const Parser::Resize& s_resize ) { actions.push_back( UserEvent( s_resize ) ); }
 
+  uint64_t get_fb_generation() const { return ++user_gen_counter_; }
+
   bool empty( void ) const { return actions.empty(); }
   size_t size( void ) const { return actions.size(); }
   const Parser::Action& get_action( unsigned int i ) const;
 
   /* interface for Network::Transport */
   void subtract( const UserStream* prefix );
-  std::string diff_from( const UserStream& existing ) const;
-  std::string init_diff( void ) const { return diff_from( UserStream() ); };
-  void apply_string( const std::string& diff );
+  void diff_from( const UserStream& existing, std::string* output ) const;
+  void diff_from_priority( const UserStream& existing, std::string* output, int ) const
+  {
+    diff_from( existing, output );
+  }
+  void init_diff( std::string* output ) const { diff_from( UserStream(), output ); };
+  void apply_string( std::string_view diff );
   bool operator==( const UserStream& x ) const { return actions == x.actions; }
 
   bool compare( const UserStream& ) { return false; }

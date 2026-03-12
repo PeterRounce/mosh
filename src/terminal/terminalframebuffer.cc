@@ -34,6 +34,9 @@
 #include <cstdio>
 #include <cstdlib>
 
+#define XXH_STATIC_LINKING_ONLY /* expose XXH3_state_t full definition */
+#include <xxhash.h>
+
 #include "src/terminal/terminalframebuffer.h"
 
 using namespace Terminal;
@@ -73,7 +76,7 @@ DrawState::DrawState( int s_width, int s_height )
 
 Framebuffer::Framebuffer( int s_width, int s_height )
   : rows(), icon_name(), window_title(), clipboard(), bell_count( 0 ), title_initialized( false ),
-    ds( s_width, s_height )
+    generation_( 0 ), ds( s_width, s_height )
 {
   assert( s_height > 0 );
   assert( s_width > 0 );
@@ -85,7 +88,7 @@ Framebuffer::Framebuffer( int s_width, int s_height )
 Framebuffer::Framebuffer( const Framebuffer& other )
   : rows( other.rows ), icon_name( other.icon_name ), window_title( other.window_title ),
     clipboard( other.clipboard ), bell_count( other.bell_count ), title_initialized( other.title_initialized ),
-    ds( other.ds )
+    generation_( other.generation_ ), ds( other.ds )
 {}
 
 Framebuffer& Framebuffer::operator=( const Framebuffer& other )
@@ -97,6 +100,7 @@ Framebuffer& Framebuffer::operator=( const Framebuffer& other )
     clipboard = other.clipboard;
     bell_count = other.bell_count;
     title_initialized = other.title_initialized;
+    generation_ = other.generation_;
     ds = other.ds;
   }
   return *this;
@@ -109,6 +113,7 @@ void Framebuffer::scroll( int N )
   } else {
     insert_line( ds.get_scrolling_region_top_row(), -N );
   }
+  bump_generation();
 }
 
 void DrawState::new_grapheme( void )
@@ -341,7 +346,7 @@ void Framebuffer::delete_line( int row, int count )
 }
 
 Row::Row( const size_t s_width, const color_type background_color )
-  : cells( s_width, Cell( background_color ) ), gen( get_gen() )
+  : cells( s_width, Cell( background_color ) ), gen( get_gen() ), hash_( 0 ), hash_dirty_( true )
 {}
 
 uint64_t Row::get_gen() const
@@ -354,22 +359,26 @@ void Row::insert_cell( int col, color_type background_color )
 {
   cells.insert( cells.begin() + col, Cell( background_color ) );
   cells.pop_back();
+  invalidate_hash();
 }
 
 void Row::delete_cell( int col, color_type background_color )
 {
   cells.push_back( Cell( background_color ) );
   cells.erase( cells.begin() + col );
+  invalidate_hash();
 }
 
 void Framebuffer::insert_cell( int row, int col )
 {
   get_mutable_row( row )->insert_cell( col, ds.get_background_rendition() );
+  bump_generation();
 }
 
 void Framebuffer::delete_cell( int row, int col )
 {
   get_mutable_row( row )->delete_cell( col, ds.get_background_rendition() );
+  bump_generation();
 }
 
 void Framebuffer::reset( void )
@@ -380,6 +389,7 @@ void Framebuffer::reset( void )
   window_title.clear();
   clipboard.clear();
   /* do not reset bell_count */
+  bump_generation();
 }
 
 void Framebuffer::soft_reset( void )
@@ -407,6 +417,7 @@ void Framebuffer::resize( int s_width, int s_height )
     rows.resize( s_height, blankrow );
   }
   if ( oldwidth == s_width ) {
+    bump_generation();
     return;
   }
   for ( rows_type::iterator i = rows.begin(); i != rows.end() && *i != blankrow; i++ ) {
@@ -414,6 +425,7 @@ void Framebuffer::resize( int s_width, int s_height )
     ( *i )->set_wrap( false );
     ( *i )->cells.resize( s_width, Cell( ds.get_background_rendition() ) );
   }
+  bump_generation();
 }
 
 void DrawState::resize( int s_width, int s_height )
@@ -600,6 +612,7 @@ void Row::reset( color_type background_color )
   for ( cells_type::iterator i = cells.begin(); i != cells.end(); i++ ) {
     i->reset( background_color );
   }
+  invalidate_hash();
 }
 
 void Framebuffer::prefix_window_title( const title_type& s )
@@ -629,6 +642,27 @@ std::string Cell::debug_contents( void ) const
   }
   chars.append( "]" );
   return chars;
+}
+
+uint64_t Row::hash() const
+{
+  if ( hash_dirty_ ) {
+    XXH3_state_t state;
+    XXH3_64bits_reset( &state );
+    for ( const auto& cell : cells ) {
+      /* Hash the string contents directly. */
+      XXH3_64bits_update( &state, cell.contents.data(), cell.contents.size() );
+      /* Hash boolean flags as a packed uint32_t to avoid padding issues. */
+      uint32_t flags = ( cell.wide ? 1u : 0u ) | ( cell.fallback ? 2u : 0u ) | ( cell.wrap ? 4u : 0u );
+      XXH3_64bits_update( &state, &flags, sizeof( flags ) );
+      /* Hash renditions as a deterministic packed value. */
+      uint64_t rend = cell.renditions.packed_for_hash();
+      XXH3_64bits_update( &state, &rend, sizeof( rend ) );
+    }
+    hash_ = XXH3_64bits_digest( &state );
+    hash_dirty_ = false;
+  }
+  return hash_;
 }
 
 bool Cell::compare( const Cell& other ) const

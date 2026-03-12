@@ -243,15 +243,7 @@ AS_IF([test x"$with_utempter" != xno],
       [AC_MSG_WARN([Unable to find libutempter; utmp entries will not be made.])],
       [AC_MSG_ERROR([--with-utempter was given but libutempter was not found.])])])])
 
-AC_ARG_ENABLE([static-zlib],
-  [AS_HELP_STRING([--enable-static-zlib], [Link zlib statically @<:@no@:>@])],
-  [], [enable_static_zlib="$enable_static_libraries"])
-AC_CHECK_LIB([z], [compress],
-  [ZLIB_LIBS=-lz
-   AS_IF([test "$enable_static_zlib" = yes],
-     [ZLIB_LIBS="-Wl,-Bstatic $ZLIB_LIBS -Wl,-Bdynamic"])
-   LIBS="$ZLIB_LIBS $LIBS"],
-  [AC_MSG_ERROR([Unable to find zlib.])])
+PKG_CHECK_MODULES([ZSTD], [libzstd])
 
 AC_SEARCH_LIBS([socket], [socket network])
 AC_SEARCH_LIBS([inet_addr], [nsl])
@@ -360,75 +352,15 @@ AC_ARG_ENABLE([static-curses],
 AS_IF([test "$enable_static_curses" = yes],
   [TINFO_LIBS="-Wl,-Bstatic $TINFO_LIBS -Wl,-Bdynamic"])
 
-dnl Default to OpenSSL, or OS X crypto library if found
-AC_CHECK_HEADERS([CommonCrypto/CommonCrypto.h],
-  [default_crypto_library="apple-common-crypto"],
-  [default_crypto_library="openssl"]
-)
-
-dnl Allow user to select over the default.
-AC_ARG_WITH(
-  [crypto-library],
-  [AS_HELP_STRING([--with-crypto-library=library], [build with the given crypto library, TYPE=openssl|nettle|apple-common-crypto @<:@default=openssl@:>@])],
-  [
-    case "${withval}" in
-      openssl|openssl-with-internal-ocb|openssl-with-openssl-ocb|nettle|apple-common-crypto) ;;
-      *) AC_MSG_ERROR([bad value ${withval} for --with-crypto-library]) ;;
-    esac
-  ],
-  [with_crypto_library="$default_crypto_library"]
-)
-
-dnl Checks for chosen crypto library
-PKG_CHECK_MODULES([OpenSSL], [openssl],
-  [have_openssl=yes
-    AC_CHECK_LIB([crypto], [AES_encrypt], [have_deprecated_openssl_aes=yes])
-    AC_CHECK_LIB([crypto], [EVP_aes_128_ocb], [have_evp_aes_ocb=yes])],
-  [:])
-PKG_CHECK_MODULES([Nettle], [nettle], [have_nettle=yes], [:])
-AS_CASE([$with_crypto_library],
-  [openssl*],
-    [AS_IF([test "x$have_openssl" != xyes],
-       [AC_MSG_ERROR([OpenSSL crypto library not found])])
-     AC_DEFINE([USE_OPENSSL_AES], [1], [Use OpenSSL library])
-     AC_SUBST([CRYPTO_CFLAGS], ["$OpenSSL_CFLAGS"])
-     AC_SUBST([CRYPTO_LIBS], ["$OpenSSL_LIBS -lcrypto"])])
-case "${with_crypto_library}" in
-  openssl|openssl-with-internal-ocb)
-    AS_IF([test "x$have_deprecated_openssl_aes" != xyes],
-      [AC_MSG_ERROR([found OpenSSL without AES support])])
-    AM_CONDITIONAL([USE_AES_OCB_FROM_OPENSSL], [false])
-    human_readable_cryptography_description='internal OCB, OpenSSL AES'
-    ;;
-  openssl-with-openssl-ocb)
-    AS_IF([test "x$have_evp_aes_ocb" != xyes],
-      [AC_MSG_ERROR([found OpenSSL without AES-OCB support])])
-    AM_CONDITIONAL([USE_AES_OCB_FROM_OPENSSL], [true])
-    human_readable_cryptography_description='OpenSSL OCB, OpenSSL AES'
-    ;;
-  nettle)
-    AS_IF([test "x$have_nettle" != xyes],
-      [AC_MSG_ERROR([Nettle crypto library not found])])
-    AC_DEFINE([USE_NETTLE_AES], [1], [Use Nettle library])
-    AC_SUBST([CRYPTO_CFLAGS], ["$Nettle_CFLAGS"])
-    AC_SUBST([CRYPTO_LIBS], ["$Nettle_LIBS"])
-    AM_CONDITIONAL([USE_AES_OCB_FROM_OPENSSL], [false])
-    human_readable_cryptography_description='internal OCB, Nettle AES'
-    ;;
-  apple-common-crypto)
-    AS_IF([test "x$ac_cv_header_CommonCrypto_CommonCrypto_h" != xyes],
-      [AC_MSG_ERROR([Apple Common Crypto header not found])])
-    AC_DEFINE([USE_APPLE_COMMON_CRYPTO_AES], [1], [Use Apple Common Crypto library])
-    AM_CONDITIONAL([USE_AES_OCB_FROM_OPENSSL], [false])
-    human_readable_cryptography_description='internal OCB, Apple Common Crypto AES'
-    ;;
-esac
+dnl Require libsodium for XChaCha20-Poly1305 AEAD
+PKG_CHECK_MODULES([SODIUM], [libsodium])
+human_readable_cryptography_description='libsodium XChaCha20-Poly1305'
 
 AC_ARG_ENABLE([static-crypto],
   [AS_HELP_STRING([--enable-static-crypto], [Link crypto library statically @<:@no@:>@])],
   [], [enable_static_crypto="$enable_static_libraries"])
 AS_IF([test "$enable_static_crypto" = yes],
-  [CRYPTO_LIBS="-Wl,-Bstatic $CRYPTO_LIBS -Wl,-Bdynamic"])
+  [SODIUM_LIBS="-Wl,-Bstatic $SODIUM_LIBS -Wl,-Bdynamic"])
 
 AC_CHECK_DECL([forkpty],
   [AC_DEFINE([FORKPTY_IN_LIBUTIL], [1],
@@ -531,6 +463,9 @@ AC_CHECK_DECL([IUTF8],
   [AC_MSG_WARN([No IUTF8 termios mode; character-erase of multibyte character sequence probably does not work properly in canonical mode on this platform.])],
   [[#include <termios.h>]])
 
+# Checks for xxhash
+PKG_CHECK_MODULES([XXHASH], [libxxhash])
+
 # Checks for protobuf
 PKG_CHECK_MODULES([protobuf], [protobuf])
 
@@ -606,5 +541,5 @@ AC_MSG_NOTICE([c++ compiler:        $CXX])
 AC_MSG_NOTICE([Warning CXXFLAGS:    $WARNING_CXXFLAGS])
 AC_MSG_NOTICE([Picky CXXFLAGS:      $PICKY_CXXFLAGS])
 AC_MSG_NOTICE([Harden CFLAGS:       $HARDEN_CFLAGS])
-AC_MSG_NOTICE([Cryptography:        $human_readable_cryptography_description])
+AC_MSG_NOTICE([Cryptography:        $human_readable_cryptography_description (libsodium)])
 AC_MSG_NOTICE([ =============================])

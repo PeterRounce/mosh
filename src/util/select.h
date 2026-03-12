@@ -36,9 +36,16 @@
 #include <cassert>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <cstring>
 
+#ifdef __linux__
+#include <set>
+#include <sys/epoll.h>
+#endif
+
 #include <sys/select.h>
+#include <unistd.h>
 
 #include "src/util/fatal_assert.h"
 #include "src/util/timestamp.h"
@@ -63,13 +70,33 @@ private:
     : max_fd( -1 ),
       /* These initializations are not used; they are just here to appease -Weffc++. */
       all_fds( dummy_fd_set ), read_fds( dummy_fd_set ), empty_sigset( dummy_sigset ), consecutive_polls( 0 )
+#ifdef __linux__
+      , epoll_fd_( -1 ), registered_fds_()
+#endif
   {
     FD_ZERO( &all_fds );
     FD_ZERO( &read_fds );
 
     clear_got_signal();
     fatal_assert( 0 == sigemptyset( &empty_sigset ) );
+
+#ifdef __linux__
+    epoll_fd_ = epoll_create1( EPOLL_CLOEXEC );
+    if ( epoll_fd_ < 0 ) {
+      perror( "epoll_create1" );
+      exit( 1 );
+    }
+#endif
   }
+
+#ifdef __linux__
+  ~Select()
+  {
+    if ( epoll_fd_ >= 0 ) {
+      close( epoll_fd_ );
+    }
+  }
+#endif
 
   void clear_got_signal( void )
   {
@@ -90,9 +117,28 @@ public:
       max_fd = fd;
     }
     FD_SET( fd, &all_fds );
+#ifdef __linux__
+    if ( registered_fds_.find( fd ) == registered_fds_.end() ) {
+      struct epoll_event ev;
+      ev.events = EPOLLIN;
+      ev.data.fd = fd;
+      if ( epoll_ctl( epoll_fd_, EPOLL_CTL_ADD, fd, &ev ) == 0 ) {
+        registered_fds_.insert( fd );
+      }
+    }
+#endif
   }
 
-  void clear_fds( void ) { FD_ZERO( &all_fds ); }
+  void clear_fds( void )
+  {
+    FD_ZERO( &all_fds );
+#ifdef __linux__
+    for ( int fd : registered_fds_ ) {
+      epoll_ctl( epoll_fd_, EPOLL_CTL_DEL, fd, nullptr );
+    }
+    registered_fds_.clear();
+#endif
+  }
 
   static void add_signal( int signum )
   {
@@ -136,6 +182,27 @@ public:
       consecutive_polls = 0;
     }
 
+#ifdef __linux__
+    struct epoll_event events[8];
+    int timeout_ms = timeout;
+    if ( timeout_ms < 0 ) {
+      timeout_ms = -1; /* epoll_pwait uses -1 for infinite wait */
+    }
+    int ret = epoll_pwait( epoll_fd_, events, 8, timeout_ms, &empty_sigset );
+
+    FD_ZERO( &read_fds );
+    if ( ret > 0 ) {
+      for ( int i = 0; i < ret; i++ ) {
+        FD_SET( events[i].data.fd, &read_fds );
+      }
+    }
+
+    if ( ret == 0 || ( ret == -1 && errno == EINTR ) ) {
+      /* The user should process events as usual. */
+      FD_ZERO( &read_fds );
+      ret = 0;
+    }
+#else
 #ifdef HAVE_PSELECT
     struct timespec ts;
     struct timespec* tsp = NULL;
@@ -178,6 +245,7 @@ public:
       FD_ZERO( &read_fds );
       ret = 0;
     }
+#endif
 
     freeze_timestamp();
 
@@ -241,6 +309,11 @@ private:
   static sigset_t dummy_sigset;
   int consecutive_polls;
   static unsigned int verbose;
+
+#ifdef __linux__
+  int epoll_fd_;
+  std::set<int> registered_fds_;
+#endif
 };
 
 #endif
