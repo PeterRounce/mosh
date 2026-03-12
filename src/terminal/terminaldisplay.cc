@@ -15,19 +15,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    In addition, as a special exception, the copyright holders give
-    permission to link the code of portions of this program with the
-    OpenSSL library under certain conditions as described in each
-    individual source file, and distribute linked combinations including
-    the two.
-
-    You must obey the GNU General Public License in all respects for all
-    of the code used other than OpenSSL. If you modify file(s) with this
-    exception, you may extend this exception to your version of the
-    file(s), but you are not obligated to do so. If you do not wish to do
-    so, delete this exception statement from your version. If you delete
-    this exception statement from all source files in the program, then
-    also delete it here.
 */
 
 #include <cstdio>
@@ -167,7 +154,10 @@ std::string Display::new_frame( bool initialized, const Framebuffer& last, const
     int lines_scrolled = 0;
     int scroll_height = 0;
 
-    /* Build a hash map from old row hash → row index for O(1) lookup. */
+    /* Build a hash map from old row hash → row index for O(1) lookup.
+       With duplicate hashes (e.g. blank rows), emplace keeps the first.
+       The equality check below validates the match, so a wrong hit just
+       skips scroll optimization and falls through to full repaint. */
     std::unordered_map<uint64_t, int> old_row_hashes;
     for ( int row = 0; row < (int)rows.size(); row++ ) {
       old_row_hashes.emplace( rows.at( row )->hash(), row );

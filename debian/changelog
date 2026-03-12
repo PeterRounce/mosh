@@ -1,3 +1,17 @@
+mosh (1.5.0-1) unstable; urgency=medium
+
+  * Protocol v3: performance and stability overhaul
+  * Replace AES-128-OCB with XChaCha20-Poly1305 (libsodium)
+  * Replace zlib with zstd compression
+  * Replace pselect with epoll_pwait on Linux
+  * Add adaptive send timing based on SRTT
+  * Add reconnection resilience: SRTT reset, burst mode, progressive resync
+  * Add generation counter dirty flag and diff caching
+  * Add XXH3 row hashing for O(n) scroll detection
+  * New dependencies: libsodium, libzstd, libxxhash
+
+ -- Peter Rounce <peter@rounce.dev>  Wed, 12 Mar 2026 04:30:00 +0000
+
 mosh (1.4.0-2) UNRELEASED; urgency=medium
 
   * Remove Benjamin Barenblat from Uploaders.

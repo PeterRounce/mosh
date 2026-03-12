@@ -15,19 +15,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    In addition, as a special exception, the copyright holders give
-    permission to link the code of portions of this program with the
-    OpenSSL library under certain conditions as described in each
-    individual source file, and distribute linked combinations including
-    the two.
-
-    You must obey the GNU General Public License in all respects for all
-    of the code used other than OpenSSL. If you modify file(s) with this
-    exception, you may extend this exception to your version of the
-    file(s), but you are not obligated to do so. If you do not wish to do
-    so, delete this exception statement from your version. If you delete
-    this exception statement from all source files in the program, then
-    also delete it here.
 */
 
 #ifndef TRANSPORT_SENDER_IMPL_HPP
@@ -303,6 +290,10 @@ void TransportSender<MyState>::update_assumed_receiver_state( void )
   /* start from what is known and give benefit of the doubt to unacknowledged states
      transmitted recently enough ago */
   assumed_receiver_state = sent_states.begin();
+  /* Clear diff caches unconditionally. Conditional clearing (only when
+     assumed_receiver_state changes) was attempted but caused assertion
+     failures in make_fragments() due to stale cached diffs after
+     rationalize_states() modifies the sent_states list. */
   cached_diff_.clear();
   cached_resend_diff_.clear();
 

@@ -15,22 +15,10 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    In addition, as a special exception, the copyright holders give
-    permission to link the code of portions of this program with the
-    OpenSSL library under certain conditions as described in each
-    individual source file, and distribute linked combinations including
-    the two.
-
-    You must obey the GNU General Public License in all respects for all
-    of the code used other than OpenSSL. If you modify file(s) with this
-    exception, you may extend this exception to your version of the
-    file(s), but you are not obligated to do so. If you do not wish to do
-    so, delete this exception statement from your version. If you delete
-    this exception statement from all source files in the program, then
-    also delete it here.
 */
 
 #include "compressor.h"
+#include "src/crypto/crypto.h"
 #include "src/util/fatal_assert.h"
 
 using namespace Network;
@@ -68,7 +56,9 @@ std::string Compressor::uncompress_str( std::string_view input )
   unsigned long long frame_size = ZSTD_getFrameContentSize( input.data(), input.size() );
   size_t out_size = INITIAL_BUF_SIZE;
   if ( frame_size != ZSTD_CONTENTSIZE_UNKNOWN && frame_size != ZSTD_CONTENTSIZE_ERROR ) {
-    fatal_assert( frame_size <= MAX_DECOMPRESS_SIZE );
+    if ( frame_size > MAX_DECOMPRESS_SIZE ) {
+      throw Crypto::CryptoException( "Decompressed frame too large." );
+    }
     out_size = static_cast<size_t>( frame_size );
   }
   if ( out_size > decompress_buf_.size() ) {
@@ -76,7 +66,9 @@ std::string Compressor::uncompress_str( std::string_view input )
   }
   size_t result
     = ZSTD_decompressDCtx( dctx_, decompress_buf_.data(), decompress_buf_.size(), input.data(), input.size() );
-  fatal_assert( !ZSTD_isError( result ) );
+  if ( ZSTD_isError( result ) ) {
+    throw Crypto::CryptoException( "Decompression failed." );
+  }
   return std::string( decompress_buf_.data(), result );
 }
 

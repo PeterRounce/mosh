@@ -24,6 +24,9 @@ override_dh_auto_configure:
 		--enable-completion \
 		--enable-compile-warnings=error
 
+override_dh_auto_test:
+	MAKEFLAGS=-j1 dh_auto_test
+
 override_dh_perl:
 	# mosh only uses Perl modules in perl-base.
 	dh_perl -d

@@ -15,24 +15,12 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    In addition, as a special exception, the copyright holders give
-    permission to link the code of portions of this program with the
-    OpenSSL library under certain conditions as described in each
-    individual source file, and distribute linked combinations including
-    the two.
-
-    You must obey the GNU General Public License in all respects for all
-    of the code used other than OpenSSL. If you modify file(s) with this
-    exception, you may extend this exception to your version of the
-    file(s), but you are not obligated to do so. If you do not wish to do
-    so, delete this exception statement from your version. If you delete
-    this exception statement from all source files in the program, then
-    also delete it here.
 */
 
 #include <cassert>
 
 #include "compressor.h"
+#include "src/crypto/crypto.h"
 #include "src/crypto/byteorder.h"
 #include "src/protobufs/transportinstruction.pb.h"
 #include "src/util/fatal_assert.h"
@@ -129,7 +117,10 @@ Instruction FragmentAssembly::get_assembly( void )
   }
 
   Instruction ret;
-  fatal_assert( ret.ParseFromString( get_compressor().uncompress_str( encoded ) ) );
+  std::string decompressed = get_compressor().uncompress_str( encoded );
+  if ( !ret.ParseFromString( decompressed ) ) {
+    throw Crypto::CryptoException( "Failed to parse transport instruction." );
+  }
 
   fragments.clear();
   fragments_arrived = 0;

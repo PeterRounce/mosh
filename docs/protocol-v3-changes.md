@@ -34,8 +34,8 @@ Expected improvement: ~2-3x faster compression at similar compression ratios.
 
 | SRTT       | Minimum Send Interval |
 |------------|-----------------------|
-| < 20ms     | 8ms (LAN)             |
-| 20-50ms    | 15ms (regional)       |
+| < 10ms     | 8ms (LAN)             |
+| 10-50ms    | 15ms (regional)       |
 | >= 50ms    | 20ms (WAN, same as v2)|
 
 ACK delay reduced from 100ms to 30ms.
