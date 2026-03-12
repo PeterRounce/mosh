@@ -89,6 +89,40 @@ including port forwarding.
   61000, but the user can select a particular port with the -p option.
   Please note that the -p option has no effect on the port used by SSH.
 
+## Building from source
+
+Install dependencies (Debian/Ubuntu/WSL):
+
+```
+$ sudo apt install -y build-essential protobuf-compiler libprotobuf-dev \
+    pkg-config libutempter-dev libzstd-dev libxxhash-dev libsodium-dev \
+    libncurses5-dev bash-completion tmux less
+```
+
+Build and test:
+
+```
+$ ./autogen.sh
+$ ./configure
+$ make
+$ make check
+```
+
+Install:
+
+```
+$ sudo make install
+```
+
+### Building a .deb package
+
+```
+$ sudo apt install -y debhelper dh-autoreconf devscripts
+$ dpkg-buildpackage -us -uc -b
+```
+
+The `.deb` file is created in the parent directory.
+
 ## Security note
 
   Note that `mosh-client` receives a session key as an environment
@@ -127,7 +161,7 @@ saving almost 200 kilobytes on disk). While Mosh is not especially CPU
 intensive and mostly sits idle when the user is not typing, we think
 the results suggest that `-O2` (the default) is preferable.
 
-Our Debian and Fedora packaging presents Mosh as a single package.
+Debian packaging presents Mosh as a single package.
 Mosh has a Perl dependency that is only required for client use. For
 some platforms, it may make sense to have separate mosh-server and
 mosh-client packages to allow mosh-server usage without Perl.
@@ -146,21 +180,3 @@ $ make check-code-coverage
 This will run all tests and produce a coverage report in HTML form that can be
 opened with your favorite browser. Ideally, newly added code should strive for
 90% (or better) incremental test coverage.
-
-## More info
-
-  * Mosh Web site:
-
-    <https://mosh.org>
-
-  * `mosh-devel@mit.edu` mailing list:
-
-    <https://mailman.mit.edu/mailman/listinfo/mosh-devel>
-
-  * `mosh-users@mit.edu` mailing list:
-
-    <https://mailman.mit.edu/mailman/listinfo/mosh-users>
-
-  * `#mosh` channel on [Libera Chat](https://libera.chat/)
-
-    https://web.libera.chat/#mosh

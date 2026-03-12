@@ -21,33 +21,20 @@ adaptive send timing, and faster reconnection after network loss. See
 Protocol v3 is not compatible with earlier versions. Both client and server
 must be upgraded together.
 
-Building
---------
+Installing
+----------
 
-Install dependencies (Debian/Ubuntu/WSL):
-
-```
-$ sudo apt install -y build-essential protobuf-compiler libprotobuf-dev \
-    pkg-config libutempter-dev libzstd-dev libxxhash-dev libsodium-dev \
-    libncurses5-dev bash-completion tmux less
-```
-
-Build and test:
+Download the `.deb` package from the
+[latest release](https://github.com/PeterRounce/mosh/releases/latest)
+and install on both client and server:
 
 ```
-$ ./autogen.sh
-$ ./configure
-$ make
-$ make check
+$ sudo apt install ./mosh_1.5.0-1_amd64.deb
 ```
 
-Install:
-
-```
-$ sudo make install
-```
-
-For Fedora/RHEL and macOS dependencies, see [docs/developers.md](docs/developers.md).
+This automatically installs all runtime dependencies (libsodium, libzstd,
+libxxhash, etc.). To build from source instead, see
+[docs/developers.md](docs/developers.md#building-from-source).
 
 The upstream Mosh project is at <https://github.com/mobile-shell/mosh>.
 This fork is licensed under GPLv3, same as upstream.
