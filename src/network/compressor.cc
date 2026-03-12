@@ -64,9 +64,11 @@ std::string Compressor::compress_str( std::string_view input )
 
 std::string Compressor::uncompress_str( std::string_view input )
 {
+  static constexpr size_t MAX_DECOMPRESS_SIZE = 16 * 1024 * 1024; /* 16 MiB safety cap */
   unsigned long long frame_size = ZSTD_getFrameContentSize( input.data(), input.size() );
   size_t out_size = INITIAL_BUF_SIZE;
   if ( frame_size != ZSTD_CONTENTSIZE_UNKNOWN && frame_size != ZSTD_CONTENTSIZE_ERROR ) {
+    fatal_assert( frame_size <= MAX_DECOMPRESS_SIZE );
     out_size = static_cast<size_t>( frame_size );
   }
   if ( out_size > decompress_buf_.size() ) {

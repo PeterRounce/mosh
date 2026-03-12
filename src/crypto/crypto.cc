@@ -43,6 +43,7 @@
 #include "src/crypto/byteorder.h"
 #include "src/crypto/crypto.h"
 #include "src/crypto/prng.h"
+#include "src/util/fatal_assert.h"
 
 using namespace Crypto;
 
@@ -208,7 +209,7 @@ const std::string Session::encrypt( const Message& plaintext )
     throw CryptoException( "crypto_aead_xchacha20poly1305_ietf_encrypt() returned error." );
   }
 
-  assert( actual_ciphertext_len == ciphertext_len );
+  fatal_assert( actual_ciphertext_len == ciphertext_len );
 
   blocks_encrypted += pt_len >> 4;
   if ( pt_len & 0xF ) {
@@ -253,7 +254,7 @@ const Message Session::decrypt( const char* str, size_t len )
     throw CryptoException( "Packet failed integrity check." );
   }
 
-  assert( actual_pt_len == pt_len );
+  fatal_assert( actual_pt_len == pt_len );
 
   return Message( nonce, plaintext );
 }

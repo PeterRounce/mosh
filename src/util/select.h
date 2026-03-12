@@ -45,6 +45,7 @@
 #endif
 
 #include <sys/select.h>
+#include <unistd.h>
 
 #include "src/util/fatal_assert.h"
 #include "src/util/timestamp.h"
@@ -69,6 +70,9 @@ private:
     : max_fd( -1 ),
       /* These initializations are not used; they are just here to appease -Weffc++. */
       all_fds( dummy_fd_set ), read_fds( dummy_fd_set ), empty_sigset( dummy_sigset ), consecutive_polls( 0 )
+#ifdef __linux__
+      , epoll_fd_( -1 ), registered_fds_()
+#endif
   {
     FD_ZERO( &all_fds );
     FD_ZERO( &read_fds );
@@ -84,6 +88,15 @@ private:
     }
 #endif
   }
+
+#ifdef __linux__
+  ~Select()
+  {
+    if ( epoll_fd_ >= 0 ) {
+      close( epoll_fd_ );
+    }
+  }
+#endif
 
   void clear_got_signal( void )
   {
