@@ -36,6 +36,17 @@ It aims to support the typical interactive uses of SSH, plus:
 Mosh does not support X forwarding or the non-interactive uses of SSH,
 including port forwarding.
 
+Protocol v3
+-----------
+
+This version introduces wire protocol v3 with improved performance and
+stability: XChaCha20-Poly1305 encryption (libsodium), zstd compression,
+adaptive send timing, and faster reconnection after network loss. See
+[docs/protocol-v3-changes.md](docs/protocol-v3-changes.md) for details.
+
+Protocol v3 is not compatible with earlier versions. Both client and server
+must be upgraded together.
+
 Other features
 --------------
 
